@@ -1,0 +1,16 @@
+[
+    {
+        "Id": "SpirvCross",
+        "Name": "SPIRV-Cross",
+        "QDocModule": "qtshadertools",
+        "Description": "A practical tool and library for performing reflection on SPIR-V and disassembling SPIR-V back to high level languages.",
+        "QtUsage": "Shader code generation.",
+
+        "Homepage": "https://github.com/KhronosGroup/SPIRV-Cross",
+        "Version": "3fa09f5677c7a62c71a1c25fd09c1d1c4842d922",
+        "License": "Apache License 2.0",
+        "LicenseId": "Apache-2.0",
+        "LicenseFile": "LICENSE",
+        "Copyright": "Copyright 2016-2018 ARM Limited"
+    }
+]
