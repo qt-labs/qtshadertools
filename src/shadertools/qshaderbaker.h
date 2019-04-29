@@ -64,6 +64,8 @@ public:
     void setGeneratedShaders(const QVector<GeneratedShader> &v);
     void setGeneratedShaderVariants(const QVector<QRhiShaderKey::ShaderVariant> &v);
 
+    void setPreamble(const QByteArray &preamble);
+
     QRhiShader bake();
 
     QString errorMessage() const;

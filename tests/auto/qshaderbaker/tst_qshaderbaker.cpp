@@ -53,6 +53,7 @@ private slots:
     void compileError();
     void translateError();
     void genVariants();
+    void defines();
 };
 
 void tst_QShaderBaker::initTestCase()
@@ -371,6 +372,57 @@ void tst_QShaderBaker::genVariants()
     }
     QCOMPARE(batchableVariantCount, 6);
     QCOMPARE(batchableGlslVariantCount, 3);
+}
+
+void tst_QShaderBaker::defines()
+{
+    QShaderBaker baker;
+    baker.setSourceFileName(QLatin1String(":/data/defines.frag"));
+    baker.setGeneratedShaderVariants({ QRhiShaderKey::StandardShader });
+    baker.setGeneratedShaders({ { QRhiShaderKey::SpirvShader, QRhiShaderVersion(100) } });
+    QRhiShader s = baker.bake();
+    QVERIFY(!s.isValid());
+    QVERIFY(!baker.errorMessage().isEmpty());
+    qDebug() << baker.errorMessage();
+
+    QByteArray preamble;
+    preamble = QByteArrayLiteral("#define DO_NOT_BREAK\n");
+    baker.setPreamble(preamble);
+    s = baker.bake();
+    QVERIFY(s.isValid());
+    QVERIFY(baker.errorMessage().isEmpty());
+
+    QRhiShaderDescription desc = s.description();
+    QCOMPARE(desc.uniformBlocks().count(), 1);
+    QRhiShaderDescription::UniformBlock blk = desc.uniformBlocks().first();
+    QCOMPARE(blk.members.count(), 2);
+    bool opacity_ok = false;
+    for (int i = 0; i < blk.members.count(); ++i) {
+        const QRhiShaderDescription::BlockVariable v = blk.members[i];
+        if (v.name == QLatin1String("opacity")) {
+            opacity_ok = v.type == QRhiShaderDescription::Vec4;
+            break;
+        }
+    }
+    QVERIFY(opacity_ok);
+
+    preamble += QByteArrayLiteral("#define OPACITY_SIZE 1\n");
+    baker.setPreamble(preamble);
+    s = baker.bake();
+    QVERIFY(s.isValid());
+    QVERIFY(baker.errorMessage().isEmpty());
+
+    desc = s.description();
+    blk = desc.uniformBlocks().first();
+    opacity_ok = false;
+    for (int i = 0; i < blk.members.count(); ++i) {
+        const QRhiShaderDescription::BlockVariable v = blk.members[i];
+        if (v.name == QLatin1String("opacity")) {
+            opacity_ok = v.type == QRhiShaderDescription::Float;
+            break;
+        }
+    }
+    QVERIFY(opacity_ok);
 }
 
 #include <tst_qshaderbaker.moc>

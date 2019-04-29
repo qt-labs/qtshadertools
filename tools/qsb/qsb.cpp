@@ -238,25 +238,27 @@ int main(int argc, char **argv)
     cmdLineParser.addOption(batchableOption);
     QCommandLineOption glslOption({ "g", "glsl" },
                                   QObject::tr("Comma separated list of GLSL versions to generate. (for example, \"100 es,120,330\")"),
-                                  QObject::tr("glsl"));
+                                  QObject::tr("versions"));
     cmdLineParser.addOption(glslOption);
     QCommandLineOption hlslOption({ "l", "hlsl" },
                                   QObject::tr("Comma separated list of HLSL (Shader Model) versions to generate. F.ex. 50 is 5.0, 51 is 5.1."),
-                                  QObject::tr("hlsl"));
+                                  QObject::tr("versions"));
     cmdLineParser.addOption(hlslOption);
     QCommandLineOption mslOption({ "m", "msl" },
                                   QObject::tr("Comma separated list of Metal Shading Language versions to generate. F.ex. 12 is 1.2, 20 is 2.0."),
-                                  QObject::tr("msl"));
+                                  QObject::tr("versions"));
     cmdLineParser.addOption(mslOption);
     QCommandLineOption outputOption({ "o", "output" },
                                      QObject::tr("Output file for the baked shader pack."),
-                                     QObject::tr("output"));
+                                     QObject::tr("filename"));
     cmdLineParser.addOption(outputOption);
     QCommandLineOption fxcOption({ "c", "fxc" }, QObject::tr("In combination with --hlsl invokes fxc to store DXBC instead of HLSL."));
     cmdLineParser.addOption(fxcOption);
     QCommandLineOption mtllibOption({ "t", "metallib" },
                                     QObject::tr("In combination with --msl builds a Metal library with xcrun metal(lib) and stores that instead of the source."));
     cmdLineParser.addOption(mtllibOption);
+    QCommandLineOption defineOption({ "D", "define" }, QObject::tr("Define macro"), QObject::tr("name[=value]"));
+    cmdLineParser.addOption(defineOption);
     QCommandLineOption dumpOption({ "d", "dump" }, QObject::tr("Switches to dump mode. Input file is expected to be a baked shader pack."));
     cmdLineParser.addOption(dumpOption);
 
@@ -339,6 +341,23 @@ int main(int argc, char **argv)
         }
 
         baker.setGeneratedShaders(genShaders);
+
+        if (cmdLineParser.isSet(defineOption)) {
+            QByteArray preamble;
+            const QStringList defines = cmdLineParser.values(defineOption);
+            for (const QString &def : defines) {
+                const QStringList defs = def.split(QLatin1Char('='), QString::SkipEmptyParts);
+                if (!defs.isEmpty()) {
+                    preamble.append("#define");
+                    for (const QString &s : defs) {
+                        preamble.append(' ');
+                        preamble.append(s.toUtf8());
+                    }
+                    preamble.append('\n');
+                }
+            }
+            baker.setPreamble(preamble);
+        }
 
         QRhiShader bs = baker.bake();
         if (!bs.isValid()) {

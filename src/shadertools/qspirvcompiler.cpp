@@ -162,6 +162,7 @@ struct QSpirvCompilerPrivate
     QByteArray batchableSource;
     EShLanguage stage = EShLangVertex;
     QSpirvCompiler::Flags flags = 0;
+    QByteArray preamble;
     QByteArray spirv;
     QString log;
 };
@@ -261,6 +262,11 @@ bool QSpirvCompilerPrivate::compile()
     const char *srcStr = actualSource->constData();
     const int size = actualSource->size();
     shader.setStringsWithLengthsAndNames(&srcStr, &size, &fnStr, 1);
+    if (!preamble.isEmpty()) {
+        // Line numbers in errors and #version are not affected by having a
+        // preamble, which is just what we need.
+        shader.setPreamble(preamble.constData());
+    }
 
     shader.setEnvInput(glslang::EShSourceGlsl, stage, glslang::EShClientVulkan, 100);
     shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_0);
@@ -372,6 +378,11 @@ void QSpirvCompiler::setSourceString(const QByteArray &sourceString, QRhiShader:
 void QSpirvCompiler::setFlags(Flags flags)
 {
     d->flags = flags;
+}
+
+void QSpirvCompiler::setPreamble(const QByteArray &preamble)
+{
+    d->preamble = preamble;
 }
 
 QByteArray QSpirvCompiler::compileToSpirv()

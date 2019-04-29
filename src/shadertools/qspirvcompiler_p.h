@@ -73,6 +73,7 @@ public:
     void setSourceDevice(QIODevice *device, QRhiShader::ShaderStage stage, const QString &fileName = QString());
     void setSourceString(const QByteArray &sourceString, QRhiShader::ShaderStage stage, const QString &fileName = QString());
     void setFlags(Flags flags);
+    void setPreamble(const QByteArray &preamble);
 
     QByteArray compileToSpirv();
     QString errorMessage() const;

@@ -150,6 +150,7 @@ struct QShaderBakerPrivate
     QRhiShader::ShaderStage stage;
     QVector<QShaderBaker::GeneratedShader> reqVersions;
     QVector<QRhiShaderKey::ShaderVariant> variants;
+    QByteArray preamble;
     QSpirvCompiler compiler;
     QString errorMessage;
 };
@@ -281,7 +282,7 @@ void QShaderBaker::setGeneratedShaders(const QVector<GeneratedShader> &v)
 }
 
 /*!
-    Specifies which shader variants are genetated. Each shader version can have
+    Specifies which shader variants are generated. Each shader version can have
     multiple variants in the resulting QRhiShader.
 
     In most cases \a v contains a single entry, QRhiShaderKey::StandardShader.
@@ -292,6 +293,23 @@ void QShaderBaker::setGeneratedShaders(const QVector<GeneratedShader> &v)
 void QShaderBaker::setGeneratedShaderVariants(const QVector<QRhiShaderKey::ShaderVariant> &v)
 {
     d->variants = v;
+}
+
+/*!
+    Specifies a custom \a preamble that is processed before the normal shader
+    code.
+
+    This is more than just prepending to the source string: the validity of the
+    GLSL version directive, which is required to be placed before everything
+    else, is not affected. Line numbers in the reported error messages also
+    remain unchanged, ignoring the contents given in the \a preamble.
+
+    One use case for preambles is to transparently insert dynamically generated
+    \c{#define} statements.
+ */
+void QShaderBaker::setPreamble(const QByteArray &preamble)
+{
+    d->preamble = preamble;
 }
 
 /*!
@@ -319,6 +337,7 @@ QRhiShader QShaderBaker::bake()
 
     d->compiler.setSourceString(d->source, d->stage, d->sourceFileName);
     d->compiler.setFlags(0);
+    d->compiler.setPreamble(d->preamble);
     QByteArray spirv = d->compiler.compileToSpirv();
     if (spirv.isEmpty()) {
         d->errorMessage = d->compiler.errorMessage();
