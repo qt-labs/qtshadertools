@@ -394,6 +394,9 @@ QByteArray QSpirvShader::translateToGLSL(int version, GlslFlags flags) const
         options.fragment.default_float_precision = flags.testFlag(FragDefaultMediump)
                 ? spirv_cross::CompilerGLSL::Options::Mediump
                 : spirv_cross::CompilerGLSL::Options::Highp;
+        // The gl backend of QRhi is not prepared for UBOs atm. Have a uniform (heh)
+        // behavior regardless of the GLSL version.
+        options.emit_uniform_buffer_as_plain_uniforms = true;
         d->glslGen->set_common_options(options);
 
         const std::string glsl = d->glslGen->compile();
