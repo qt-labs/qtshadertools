@@ -88,74 +88,74 @@ static bool runProcess(const QString &cmd, QByteArray *output, QByteArray *error
     return true;
 }
 
-static QString stageStr(QRhiShader::ShaderStage stage)
+static QString stageStr(QShader::Stage stage)
 {
     switch (stage) {
-    case QRhiShader::VertexStage:
+    case QShader::VertexStage:
         return QStringLiteral("Vertex");
-    case QRhiShader::TessControlStage:
-        return QStringLiteral("TessControl");
-    case QRhiShader::TessEvaluationStage:
-        return QStringLiteral("TessEval");
-    case QRhiShader::GeometryStage:
+    case QShader::TessellationControlStage:
+        return QStringLiteral("TessellationControl");
+    case QShader::TessellationEvaluationStage:
+        return QStringLiteral("TessellationEvaluation");
+    case QShader::GeometryStage:
         return QStringLiteral("Geometry");
-    case QRhiShader::FragmentStage:
+    case QShader::FragmentStage:
         return QStringLiteral("Fragment");
-    case QRhiShader::ComputeStage:
+    case QShader::ComputeStage:
         return QStringLiteral("Compute");
     default:
         Q_UNREACHABLE();
     }
 }
 
-static QString sourceStr(QRhiShaderKey::ShaderSource source)
+static QString sourceStr(QShader::Source source)
 {
     switch (source) {
-    case QRhiShaderKey::SpirvShader:
+    case QShader::SpirvShader:
         return QStringLiteral("SPIR-V");
-    case QRhiShaderKey::GlslShader:
+    case QShader::GlslShader:
         return QStringLiteral("GLSL");
-    case QRhiShaderKey::HlslShader:
+    case QShader::HlslShader:
         return QStringLiteral("HLSL");
-    case QRhiShaderKey::DxbcShader:
+    case QShader::DxbcShader:
         return QStringLiteral("DXBC");
-    case QRhiShaderKey::MslShader:
+    case QShader::MslShader:
         return QStringLiteral("MSL");
-    case QRhiShaderKey::DxilShader:
+    case QShader::DxilShader:
         return QStringLiteral("DXIL");
-    case QRhiShaderKey::MetalLibShader:
+    case QShader::MetalLibShader:
         return QStringLiteral("metallib");
     default:
         Q_UNREACHABLE();
     }
 }
 
-static QString sourceVersionStr(const QRhiShaderVersion &v)
+static QString sourceVersionStr(const QShaderVersion &v)
 {
     QString s = v.version() ? QString::number(v.version()) : QString();
-    if (v.flags().testFlag(QRhiShaderVersion::GlslEs))
+    if (v.flags().testFlag(QShaderVersion::GlslEs))
         s += QLatin1String(" es");
 
     return s;
 }
 
-static QString sourceVariantStr(const QRhiShaderKey::ShaderVariant &v)
+static QString sourceVariantStr(const QShader::Variant &v)
 {
     switch (v) {
-    case QRhiShaderKey::StandardShader:
+    case QShader::StandardShader:
         return QLatin1String("Standard");
-    case QRhiShaderKey::BatchableVertexShader:
+    case QShader::BatchableVertexShader:
         return QLatin1String("Batchable");
     default:
         Q_UNREACHABLE();
     }
 }
 
-static void dump(const QRhiShader &bs)
+static void dump(const QShader &bs)
 {
     QTextStream ts(stdout);
     ts << "Stage: " << stageStr(bs.stage()) << "\n\n";
-    QList<QRhiShaderKey> s = bs.availableShaders();
+    QVector<QShaderKey> s = bs.availableShaders();
     ts << "Has " << s.count() << " shaders: (unordered list)\n";
     for (int i = 0; i < s.count(); ++i) {
         ts << "  Shader " << i << ": " << sourceStr(s[i].source())
@@ -168,18 +168,18 @@ static void dump(const QRhiShader &bs)
         ts << "Shader " << i << ": " << sourceStr(s[i].source())
             << " " << sourceVersionStr(s[i].sourceVersion())
             << " [" << sourceVariantStr(s[i].sourceVariant()) << "]\n";
-        QRhiShaderCode shader = bs.shader(s[i]);
+        QShaderCode shader = bs.shader(s[i]);
         if (!shader.entryPoint().isEmpty())
             ts << "Entry point: " << shader.entryPoint() << "\n";
         ts << "Contents:\n";
         switch (s[i].source()) {
-        case QRhiShaderKey::SpirvShader:
+        case QShader::SpirvShader:
             Q_FALLTHROUGH();
-        case QRhiShaderKey::DxbcShader:
+        case QShader::DxbcShader:
             Q_FALLTHROUGH();
-        case QRhiShaderKey::DxilShader:
+        case QShader::DxilShader:
             Q_FALLTHROUGH();
-        case QRhiShaderKey::MetalLibShader:
+        case QShader::MetalLibShader:
             ts << "Binary of " << shader.shader().size() << " bytes\n\n";
             break;
         default:
@@ -190,27 +190,27 @@ static void dump(const QRhiShader &bs)
     }
 }
 
-static QByteArray fxcProfile(const QRhiShader &bs, const QRhiShaderKey &k)
+static QByteArray fxcProfile(const QShader &bs, const QShaderKey &k)
 {
     QByteArray t;
 
     switch (bs.stage()) {
-    case QRhiShader::VertexStage:
+    case QShader::VertexStage:
         t += QByteArrayLiteral("vs_");
         break;
-    case QRhiShader::TessControlStage:
+    case QShader::TessellationControlStage:
         t += QByteArrayLiteral("hs_");
         break;
-    case QRhiShader::TessEvaluationStage:
+    case QShader::TessellationEvaluationStage:
         t += QByteArrayLiteral("ds_");
         break;
-    case QRhiShader::GeometryStage:
+    case QShader::GeometryStage:
         t += QByteArrayLiteral("gs_");
         break;
-    case QRhiShader::FragmentStage:
+    case QShader::FragmentStage:
         t += QByteArrayLiteral("ps_");
         break;
-    case QRhiShader::ComputeStage:
+    case QShader::ComputeStage:
         t += QByteArrayLiteral("cs_");
         break;
     default:
@@ -274,7 +274,7 @@ int main(int argc, char **argv)
         if (cmdLineParser.isSet(dumpOption)) {
             QByteArray buf = readFile(fn);
             if (!buf.isEmpty()) {
-                QRhiShader bs = QRhiShader::fromSerialized(buf);
+                QShader bs = QShader::fromSerialized(buf);
                 if (bs.isValid())
                     dump(bs);
                 else
@@ -285,32 +285,32 @@ int main(int argc, char **argv)
 
         baker.setSourceFileName(fn);
 
-        QVector<QRhiShaderKey::ShaderVariant> variants;
-        variants << QRhiShaderKey::StandardShader;
+        QVector<QShader::Variant> variants;
+        variants << QShader::StandardShader;
         if (cmdLineParser.isSet(batchableOption))
-            variants << QRhiShaderKey::BatchableVertexShader;
+            variants << QShader::BatchableVertexShader;
 
         baker.setGeneratedShaderVariants(variants);
 
         QVector<QShaderBaker::GeneratedShader> genShaders;
 
-        genShaders << qMakePair(QRhiShaderKey::SpirvShader, QRhiShaderVersion(100));
+        genShaders << qMakePair(QShader::SpirvShader, QShaderVersion(100));
 
         if (cmdLineParser.isSet(glslOption)) {
             const QStringList versions = cmdLineParser.value(glslOption).trimmed().split(',');
             for (QString version : versions) {
-                QRhiShaderVersion::Flags flags = 0;
+                QShaderVersion::Flags flags = 0;
                 if (version.endsWith(QLatin1String(" es"))) {
                     version = version.left(version.count() - 3);
-                    flags |= QRhiShaderVersion::GlslEs;
+                    flags |= QShaderVersion::GlslEs;
                 } else if (version.endsWith(QLatin1String("es"))) {
                     version = version.left(version.count() - 2);
-                    flags |= QRhiShaderVersion::GlslEs;
+                    flags |= QShaderVersion::GlslEs;
                 }
                 bool ok = false;
                 int v = version.toInt(&ok);
                 if (ok)
-                    genShaders << qMakePair(QRhiShaderKey::GlslShader, QRhiShaderVersion(v, flags));
+                    genShaders << qMakePair(QShader::GlslShader, QShaderVersion(v, flags));
                 else
                     qWarning("Ignoring invalid GLSL version %s", qPrintable(version));
             }
@@ -322,7 +322,7 @@ int main(int argc, char **argv)
                 bool ok = false;
                 int v = version.toInt(&ok);
                 if (ok)
-                    genShaders << qMakePair(QRhiShaderKey::HlslShader, QRhiShaderVersion(v));
+                    genShaders << qMakePair(QShader::HlslShader, QShaderVersion(v));
                 else
                     qWarning("Ignoring invalid HLSL (Shader Model) version %s", qPrintable(version));
             }
@@ -334,7 +334,7 @@ int main(int argc, char **argv)
                 bool ok = false;
                 int v = version.toInt(&ok);
                 if (ok)
-                    genShaders << qMakePair(QRhiShaderKey::MslShader, QRhiShaderVersion(v));
+                    genShaders << qMakePair(QShader::MslShader, QShaderVersion(v));
                 else
                     qWarning("Ignoring invalid MSL version %s", qPrintable(version));
             }
@@ -359,7 +359,7 @@ int main(int argc, char **argv)
             baker.setPreamble(preamble);
         }
 
-        QRhiShader bs = baker.bake();
+        QShader bs = baker.bake();
         if (!bs.isValid()) {
             qWarning("Shader baking failed: %s", qPrintable(baker.errorMessage()));
             return 1;
@@ -372,9 +372,9 @@ int main(int argc, char **argv)
                 return 1;
             }
             auto skeys = bs.availableShaders();
-            for (QRhiShaderKey &k : skeys) {
-                if (k.source() == QRhiShaderKey::HlslShader) {
-                    QRhiShaderCode s = bs.shader(k);
+            for (QShaderKey &k : skeys) {
+                if (k.source() == QShader::HlslShader) {
+                    QShaderCode s = bs.shader(k);
 
                     const QString tmpIn = tempDir.path() + QLatin1String("/qsb_hlsl_temp");
                     const QString tmpOut = tempDir.path() + QLatin1String("/qsb_hlsl_temp_out");
@@ -415,9 +415,9 @@ int main(int argc, char **argv)
                     const QByteArray bytecode = f.readAll();
                     f.close();
 
-                    QRhiShaderKey dxbcKey = k;
-                    dxbcKey.setSource(QRhiShaderKey::DxbcShader);
-                    QRhiShaderCode dxbcShader(bytecode, s.entryPoint());
+                    QShaderKey dxbcKey = k;
+                    dxbcKey.setSource(QShader::DxbcShader);
+                    QShaderCode dxbcShader(bytecode, s.entryPoint());
                     bs.setShader(dxbcKey, dxbcShader);
                     bs.removeShader(k);
                 }
@@ -431,9 +431,9 @@ int main(int argc, char **argv)
                 return 1;
             }
             auto skeys = bs.availableShaders();
-            for (const QRhiShaderKey &k : skeys) {
-                if (k.source() == QRhiShaderKey::MslShader) {
-                    QRhiShaderCode s = bs.shader(k);
+            for (const QShaderKey &k : skeys) {
+                if (k.source() == QShader::MslShader) {
+                    QShaderCode s = bs.shader(k);
 
                     const QString tmpIn = tempDir.path() + QLatin1String("/qsb_msl_temp.metal");
                     const QString tmpInterm = tempDir.path() + QLatin1String("/qsb_msl_temp_air");
@@ -492,9 +492,9 @@ int main(int argc, char **argv)
                     const QByteArray bytecode = f.readAll();
                     f.close();
 
-                    QRhiShaderKey mtlKey = k;
-                    mtlKey.setSource(QRhiShaderKey::MetalLibShader);
-                    QRhiShaderCode mtlShader(bytecode, s.entryPoint());
+                    QShaderKey mtlKey = k;
+                    mtlKey.setSource(QShader::MetalLibShader);
+                    QShaderCode mtlShader(bytecode, s.entryPoint());
                     bs.setShader(mtlKey, mtlShader);
                     bs.removeShader(k);
                 }

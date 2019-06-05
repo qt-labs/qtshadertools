@@ -38,7 +38,7 @@
 #define QSHADERBAKER_H
 
 #include <QtShaderTools/qtshadertoolsglobal.h>
-#include <QtGui/qrhishader.h>
+#include <QtGui/private/qshader_p_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -52,21 +52,21 @@ public:
     ~QShaderBaker();
 
     void setSourceFileName(const QString &fileName);
-    void setSourceFileName(const QString &fileName, QRhiShader::ShaderStage stage);
+    void setSourceFileName(const QString &fileName, QShader::Stage stage);
 
-    void setSourceDevice(QIODevice *device, QRhiShader::ShaderStage stage,
+    void setSourceDevice(QIODevice *device, QShader::Stage stage,
                          const QString &fileName = QString());
 
-    void setSourceString(const QByteArray &sourceString, QRhiShader::ShaderStage stage,
+    void setSourceString(const QByteArray &sourceString, QShader::Stage stage,
                          const QString &fileName = QString());
 
-    typedef QPair<QRhiShaderKey::ShaderSource, QRhiShaderVersion> GeneratedShader;
+    typedef QPair<QShader::Source, QShaderVersion> GeneratedShader;
     void setGeneratedShaders(const QVector<GeneratedShader> &v);
-    void setGeneratedShaderVariants(const QVector<QRhiShaderKey::ShaderVariant> &v);
+    void setGeneratedShaderVariants(const QVector<QShader::Variant> &v);
 
     void setPreamble(const QByteArray &preamble);
 
-    QRhiShader bake();
+    QShader bake();
 
     QString errorMessage() const;
 

@@ -334,27 +334,27 @@ void QSpirvCompiler::setSourceFileName(const QString &fileName)
     }
 }
 
-static inline EShLanguage mapShaderStage(QRhiShader::ShaderStage stage)
+static inline EShLanguage mapShaderStage(QShader::Stage stage)
 {
     switch (stage) {
-    case QRhiShader::VertexStage:
+    case QShader::VertexStage:
         return EShLangVertex;
-    case QRhiShader::TessControlStage:
+    case QShader::TessellationControlStage:
         return EShLangTessControl;
-    case QRhiShader::TessEvaluationStage:
+    case QShader::TessellationEvaluationStage:
         return EShLangTessEvaluation;
-    case QRhiShader::GeometryStage:
+    case QShader::GeometryStage:
         return EShLangGeometry;
-    case QRhiShader::FragmentStage:
+    case QShader::FragmentStage:
         return EShLangFragment;
-    case QRhiShader::ComputeStage:
+    case QShader::ComputeStage:
         return EShLangCompute;
     default:
         return EShLangVertex;
     }
 }
 
-void QSpirvCompiler::setSourceFileName(const QString &fileName, QRhiShader::ShaderStage stage)
+void QSpirvCompiler::setSourceFileName(const QString &fileName, QShader::Stage stage)
 {
     if (!d->readFile(fileName))
         return;
@@ -362,12 +362,12 @@ void QSpirvCompiler::setSourceFileName(const QString &fileName, QRhiShader::Shad
     d->stage = mapShaderStage(stage);
 }
 
-void QSpirvCompiler::setSourceDevice(QIODevice *device, QRhiShader::ShaderStage stage, const QString &fileName)
+void QSpirvCompiler::setSourceDevice(QIODevice *device, QShader::Stage stage, const QString &fileName)
 {
     setSourceString(device->readAll(), stage, fileName);
 }
 
-void QSpirvCompiler::setSourceString(const QByteArray &sourceString, QRhiShader::ShaderStage stage, const QString &fileName)
+void QSpirvCompiler::setSourceString(const QByteArray &sourceString, QShader::Stage stage, const QString &fileName)
 {
     d->sourceFileName = fileName; // for error messages, include handling, etc.
     d->source = sourceString;

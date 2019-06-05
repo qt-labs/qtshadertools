@@ -35,7 +35,7 @@
 ****************************************************************************/
 
 #include "qspirvshader_p.h"
-#include <QtGui/private/qrhishaderdescription_p.h>
+#include <QtGui/private/qshaderdescription_p_p.h>
 #include <QFile>
 #include <QDebug>
 
@@ -54,8 +54,8 @@ struct QSpirvShaderPrivate
     void createGLSLCompiler();
     void processResources();
 
-    QRhiShaderDescription::InOutVariable inOutVar(const spirv_cross::Resource &r);
-    QRhiShaderDescription::BlockVariable blockVar(uint32_t typeId,
+    QShaderDescription::InOutVariable inOutVar(const spirv_cross::Resource &r);
+    QShaderDescription::BlockVariable blockVar(uint32_t typeId,
                                                uint32_t memberIdx,
                                                uint32_t memberTypeId);
 
@@ -63,7 +63,7 @@ struct QSpirvShaderPrivate
     void remapLogHandler(const std::string &s);
 
     QByteArray ir;
-    QRhiShaderDescription shaderDescription;
+    QShaderDescription shaderDescription;
 
     spirv_cross::CompilerGLSL *glslGen = nullptr;
     spirv_cross::CompilerHLSL *hlslGen = nullptr;
@@ -86,78 +86,78 @@ void QSpirvShaderPrivate::createGLSLCompiler()
     glslGen = new spirv_cross::CompilerGLSL(reinterpret_cast<const uint32_t *>(ir.constData()), ir.size() / 4);
 }
 
-static QRhiShaderDescription::VarType matVarType(const spirv_cross::SPIRType &t, QRhiShaderDescription::VarType compType)
+static QShaderDescription::VariableType matVarType(const spirv_cross::SPIRType &t, QShaderDescription::VariableType compType)
 {
     switch (t.columns) {
     case 2:
-        return QRhiShaderDescription::VarType(compType + 4 + (t.vecsize == 3 ? 1 : t.vecsize == 4 ? 2 : 0));
+        return QShaderDescription::VariableType(compType + 4 + (t.vecsize == 3 ? 1 : t.vecsize == 4 ? 2 : 0));
     case 3:
-        return QRhiShaderDescription::VarType(compType + 7 + (t.vecsize == 2 ? 1 : t.vecsize == 4 ? 2 : 0));
+        return QShaderDescription::VariableType(compType + 7 + (t.vecsize == 2 ? 1 : t.vecsize == 4 ? 2 : 0));
     case 4:
-        return QRhiShaderDescription::VarType(compType + 10 + (t.vecsize == 2 ? 1 : t.vecsize == 3 ? 2 : 0));
+        return QShaderDescription::VariableType(compType + 10 + (t.vecsize == 2 ? 1 : t.vecsize == 3 ? 2 : 0));
     default:
-        return QRhiShaderDescription::Unknown;
+        return QShaderDescription::Unknown;
     }
 }
 
-static QRhiShaderDescription::VarType vecVarType(const spirv_cross::SPIRType &t, QRhiShaderDescription::VarType compType)
+static QShaderDescription::VariableType vecVarType(const spirv_cross::SPIRType &t, QShaderDescription::VariableType compType)
 {
     switch (t.vecsize) {
     case 1:
         return compType;
     case 2:
-        return QRhiShaderDescription::VarType(compType + 1);
+        return QShaderDescription::VariableType(compType + 1);
     case 3:
-        return QRhiShaderDescription::VarType(compType + 2);
+        return QShaderDescription::VariableType(compType + 2);
     case 4:
-        return QRhiShaderDescription::VarType(compType + 3);
+        return QShaderDescription::VariableType(compType + 3);
     default:
-        return QRhiShaderDescription::Unknown;
+        return QShaderDescription::Unknown;
     }
 }
 
-static QRhiShaderDescription::VarType imageVarType(const spirv_cross::SPIRType &t)
+static QShaderDescription::VariableType imageVarType(const spirv_cross::SPIRType &t)
 {
     switch (t.image.dim) {
     case spv::Dim1D:
-        return t.image.arrayed ? QRhiShaderDescription::Sampler1DArray : QRhiShaderDescription::Sampler1D;
+        return t.image.arrayed ? QShaderDescription::Sampler1DArray : QShaderDescription::Sampler1D;
     case spv::Dim2D:
         return t.image.arrayed
-                ? (t.image.ms ? QRhiShaderDescription::Sampler2DMSArray : QRhiShaderDescription::Sampler2DArray)
-                : (t.image.ms ? QRhiShaderDescription::Sampler2DMS : QRhiShaderDescription::Sampler2D);
+                ? (t.image.ms ? QShaderDescription::Sampler2DMSArray : QShaderDescription::Sampler2DArray)
+                : (t.image.ms ? QShaderDescription::Sampler2DMS : QShaderDescription::Sampler2D);
     case spv::Dim3D:
-        return t.image.arrayed ? QRhiShaderDescription::Sampler3DArray : QRhiShaderDescription::Sampler3D;
+        return t.image.arrayed ? QShaderDescription::Sampler3DArray : QShaderDescription::Sampler3D;
     case spv::DimCube:
-        return t.image.arrayed ? QRhiShaderDescription::SamplerCubeArray : QRhiShaderDescription::SamplerCube;
+        return t.image.arrayed ? QShaderDescription::SamplerCubeArray : QShaderDescription::SamplerCube;
     default:
-        return QRhiShaderDescription::Unknown;
+        return QShaderDescription::Unknown;
     }
 }
 
-static QRhiShaderDescription::VarType varType(const spirv_cross::SPIRType &t)
+static QShaderDescription::VariableType varType(const spirv_cross::SPIRType &t)
 {
-    QRhiShaderDescription::VarType vt = QRhiShaderDescription::Unknown;
+    QShaderDescription::VariableType vt = QShaderDescription::Unknown;
     switch (t.basetype) {
     case spirv_cross::SPIRType::Float:
-        vt = t.columns > 1 ? matVarType(t, QRhiShaderDescription::Float) : vecVarType(t, QRhiShaderDescription::Float);
+        vt = t.columns > 1 ? matVarType(t, QShaderDescription::Float) : vecVarType(t, QShaderDescription::Float);
         break;
     case spirv_cross::SPIRType::Double:
-        vt = t.columns > 1 ? matVarType(t, QRhiShaderDescription::Double) : vecVarType(t, QRhiShaderDescription::Double);
+        vt = t.columns > 1 ? matVarType(t, QShaderDescription::Double) : vecVarType(t, QShaderDescription::Double);
         break;
     case spirv_cross::SPIRType::UInt:
-        vt = vecVarType(t, QRhiShaderDescription::Uint);
+        vt = vecVarType(t, QShaderDescription::Uint);
         break;
     case spirv_cross::SPIRType::Int:
-        vt = vecVarType(t, QRhiShaderDescription::Int);
+        vt = vecVarType(t, QShaderDescription::Int);
         break;
     case spirv_cross::SPIRType::Boolean:
-        vt = vecVarType(t, QRhiShaderDescription::Uint);
+        vt = vecVarType(t, QShaderDescription::Uint);
         break;
     case spirv_cross::SPIRType::SampledImage:
         vt = imageVarType(t);
         break;
     case spirv_cross::SPIRType::Struct:
-        vt = QRhiShaderDescription::Struct;
+        vt = QShaderDescription::Struct;
         break;
     // ### separate image/sampler, atomic counter, ...
     default:
@@ -166,9 +166,9 @@ static QRhiShaderDescription::VarType varType(const spirv_cross::SPIRType &t)
     return vt;
 }
 
-QRhiShaderDescription::InOutVariable QSpirvShaderPrivate::inOutVar(const spirv_cross::Resource &r)
+QShaderDescription::InOutVariable QSpirvShaderPrivate::inOutVar(const spirv_cross::Resource &r)
 {
-    QRhiShaderDescription::InOutVariable v;
+    QShaderDescription::InOutVariable v;
     v.name = QString::fromStdString(r.name);
 
     const spirv_cross::SPIRType &t = glslGen->get_type(r.base_type_id);
@@ -186,11 +186,11 @@ QRhiShaderDescription::InOutVariable QSpirvShaderPrivate::inOutVar(const spirv_c
     return v;
 }
 
-QRhiShaderDescription::BlockVariable QSpirvShaderPrivate::blockVar(uint32_t typeId,
+QShaderDescription::BlockVariable QSpirvShaderPrivate::blockVar(uint32_t typeId,
                                                                 uint32_t memberIdx,
                                                                 uint32_t memberTypeId)
 {
-    QRhiShaderDescription::BlockVariable v;
+    QShaderDescription::BlockVariable v;
     v.name = QString::fromStdString(glslGen->get_member_name(typeId, memberIdx));
 
     const spirv_cross::SPIRType &memberType(glslGen->get_type(memberTypeId));
@@ -212,7 +212,7 @@ QRhiShaderDescription::BlockVariable QSpirvShaderPrivate::blockVar(uint32_t type
     if (glslGen->has_member_decoration(typeId, memberIdx, spv::DecorationRowMajor))
         v.matrixIsRowMajor = true;
 
-    if (v.type == QRhiShaderDescription::Struct) {
+    if (v.type == QShaderDescription::Struct) {
         uint32_t memberMemberIdx = 0;
         for (uint32_t memberMemberType : memberType.member_types) {
             v.structMembers.append(blockVar(memberType.self, memberMemberIdx, memberMemberType));
@@ -225,8 +225,8 @@ QRhiShaderDescription::BlockVariable QSpirvShaderPrivate::blockVar(uint32_t type
 
 void QSpirvShaderPrivate::processResources()
 {
-    shaderDescription = QRhiShaderDescription();
-    QRhiShaderDescriptionPrivate *dd = QRhiShaderDescriptionPrivate::get(&shaderDescription);
+    shaderDescription = QShaderDescription();
+    QShaderDescriptionPrivate *dd = QShaderDescriptionPrivate::get(&shaderDescription);
 
     spirv_cross::ShaderResources resources = glslGen->get_shader_resources();
 
@@ -245,21 +245,21 @@ void QSpirvShaderPrivate::processResources()
   */
 
     for (const spirv_cross::Resource &r : resources.stage_inputs) {
-        const QRhiShaderDescription::InOutVariable v = inOutVar(r);
-        if (v.type != QRhiShaderDescription::Unknown)
+        const QShaderDescription::InOutVariable v = inOutVar(r);
+        if (v.type != QShaderDescription::Unknown)
             dd->inVars.append(v);
     }
 
     for (const spirv_cross::Resource &r : resources.stage_outputs) {
-        const QRhiShaderDescription::InOutVariable v = inOutVar(r);
-        if (v.type != QRhiShaderDescription::Unknown)
+        const QShaderDescription::InOutVariable v = inOutVar(r);
+        if (v.type != QShaderDescription::Unknown)
             dd->outVars.append(v);
     }
 
     // uniform blocks map to either a uniform buffer or a plain struct
     for (const spirv_cross::Resource &r : resources.uniform_buffers) {
         const spirv_cross::SPIRType &t = glslGen->get_type(r.base_type_id);
-        QRhiShaderDescription::UniformBlock block;
+        QShaderDescription::UniformBlock block;
         block.blockName = QString::fromStdString(r.name);
         block.structName = QString::fromStdString(glslGen->get_name(r.id));
         block.size = int(glslGen->get_declared_struct_size(t));
@@ -269,9 +269,9 @@ void QSpirvShaderPrivate::processResources()
             block.descriptorSet = glslGen->get_decoration(r.id, spv::DecorationDescriptorSet);
         uint32_t idx = 0;
         for (uint32_t memberTypeId : t.member_types) {
-            const QRhiShaderDescription::BlockVariable v = blockVar(r.base_type_id, idx, memberTypeId);
+            const QShaderDescription::BlockVariable v = blockVar(r.base_type_id, idx, memberTypeId);
             ++idx;
-            if (v.type != QRhiShaderDescription::Unknown)
+            if (v.type != QShaderDescription::Unknown)
                 block.members.append(v);
         }
         dd->uniformBlocks.append(block);
@@ -280,22 +280,22 @@ void QSpirvShaderPrivate::processResources()
     // push constant blocks map to a plain GLSL struct regardless of version
     for (const spirv_cross::Resource &r : resources.push_constant_buffers) {
         const spirv_cross::SPIRType &t = glslGen->get_type(r.base_type_id);
-        QRhiShaderDescription::PushConstantBlock block;
+        QShaderDescription::PushConstantBlock block;
         block.name = QString::fromStdString(glslGen->get_name(r.id));
         block.size = int(glslGen->get_declared_struct_size(t));
         uint32_t idx = 0;
         for (uint32_t memberTypeId : t.member_types) {
-            const QRhiShaderDescription::BlockVariable v = blockVar(r.base_type_id, idx, memberTypeId);
+            const QShaderDescription::BlockVariable v = blockVar(r.base_type_id, idx, memberTypeId);
             ++idx;
-            if (v.type != QRhiShaderDescription::Unknown)
+            if (v.type != QShaderDescription::Unknown)
                 block.members.append(v);
         }
         dd->pushConstantBlocks.append(block);
     }
 
     for (const spirv_cross::Resource &r : resources.sampled_images) {
-        const QRhiShaderDescription::InOutVariable v = inOutVar(r);
-        if (v.type != QRhiShaderDescription::Unknown)
+        const QShaderDescription::InOutVariable v = inOutVar(r);
+        if (v.type != QShaderDescription::Unknown)
             dd->combinedImageSamplers.append(v);
     }
 }
@@ -334,7 +334,7 @@ void QSpirvShader::setSpirvBinary(const QByteArray &spirv)
     d->processResources();
 }
 
-QRhiShaderDescription QSpirvShader::shaderDescription() const
+QShaderDescription QSpirvShader::shaderDescription() const
 {
     return d->shaderDescription;
 }

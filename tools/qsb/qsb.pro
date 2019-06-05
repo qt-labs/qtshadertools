@@ -1,5 +1,5 @@
 SOURCES += qsb.cpp
 
-QT += shadertools
+QT += shadertools gui-private
 
 load(qt_tool)

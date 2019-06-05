@@ -49,7 +49,7 @@
 //
 
 #include <QtShaderTools/private/qtshadertoolsglobal_p.h>
-#include <QtGui/qrhishader.h>
+#include <QtGui/private/qshader_p.h>
 #include <QtCore/QString>
 
 QT_BEGIN_NAMESPACE
@@ -69,9 +69,9 @@ public:
     Q_DECLARE_FLAGS(Flags, Flag)
 
     void setSourceFileName(const QString &fileName);
-    void setSourceFileName(const QString &fileName, QRhiShader::ShaderStage stage);
-    void setSourceDevice(QIODevice *device, QRhiShader::ShaderStage stage, const QString &fileName = QString());
-    void setSourceString(const QByteArray &sourceString, QRhiShader::ShaderStage stage, const QString &fileName = QString());
+    void setSourceFileName(const QString &fileName, QShader::Stage stage);
+    void setSourceDevice(QIODevice *device, QShader::Stage stage, const QString &fileName = QString());
+    void setSourceString(const QByteArray &sourceString, QShader::Stage stage, const QString &fileName = QString());
     void setFlags(Flags flags);
     void setPreamble(const QByteArray &preamble);
 

@@ -49,7 +49,7 @@
 //
 
 #include <QtShaderTools/private/qtshadertoolsglobal_p.h>
-#include <QtGui/qrhishaderdescription.h>
+#include <QtGui/private/qshaderdescription_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -78,7 +78,7 @@ public:
     void setDevice(QIODevice *device);
     void setSpirvBinary(const QByteArray &spirv);
 
-    QRhiShaderDescription shaderDescription() const;
+    QShaderDescription shaderDescription() const;
 
     QByteArray strippedSpirvBinary(StripFlags flags = StripFlags(), QString *errorMessage = nullptr) const;
 

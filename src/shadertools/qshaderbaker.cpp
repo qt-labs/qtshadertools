@@ -53,14 +53,14 @@ QT_BEGIN_NAMESPACE
     QShaderBaker takes a graphics (vertex, fragment, etc.) or compute shader,
     and produces multiple - either source or bytecode - variants of it,
     together with reflection information. The results are represented by a
-    QRhiShader instance, which also provides simple and fast serialization
+    QShader instance, which also provides simple and fast serialization
     and deserialization.
 
     \note Applications and libraries are recommended to avoid using this class
     directly. Rather, all Qt users are encouraged to rely on offline
     compilation by invoking the \c qsb command-line tool at build time. This
     tool uses QShaderBaker itself and writes the serialized version of the
-    generated QRhiShader into a file. The usage of this class should be
+    generated QShader into a file. The usage of this class should be
     restricted to cases where run time compilation cannot be avoided, such as
     when working with user-provided shader source strings.
 
@@ -76,8 +76,8 @@ QT_BEGIN_NAMESPACE
     \l{https://docs.microsoft.com/en-us/windows/desktop/direct3dhlsl/dx-graphics-hlsl}{HLSL}
     as a source format, once HLSL to SPIR-V compilation is deemed suitable.
 
-    The reflection metadata is retrievable from the resulting QRhiShader by
-    calling QRhiShader::description(). This is essential when having to
+    The reflection metadata is retrievable from the resulting QShader by
+    calling QShader::description(). This is essential when having to
     discover what set of vertex inputs and shader resources a shader expects,
     and what the layouts of those are, as many modern graphics APIs offer no
     built-in shader reflection capabilities.
@@ -92,7 +92,7 @@ QT_BEGIN_NAMESPACE
     Fragment shader:
     \snippet color.frag 0
 
-    To get QRhiShader instances that can be passed as-is to a
+    To get QShader instances that can be passed as-is to a
     QRhiGraphicsPipeline, there are two options: doing the shader pack
     generation off line, or at run time.
 
@@ -111,12 +111,12 @@ QT_BEGIN_NAMESPACE
     setGeneratedShaders(). Once the resulting files are available, they can be
     shipped with the application (typically embedded into the executable the
     the Qt Resource System), and can be loaded and passed to
-    QRhiShader::fromSerialized() at run time.
+    QShader::fromSerialized() at run time.
 
     While not shown here, \c qsb can do more: it is also able to invoke \c fxc
     on Windows or the appropriate XCode tools on macOS to compile the generated
     HLSL or Metal shader code into bytecode and include the compiled versions
-    in the QRhiShader. After a baked shader pack is written into a file, its
+    in the QShader. After a baked shader pack is written into a file, its
     contents can be examined by running \c{qsb -d} on it. Run \c qsb with
     \c{--help} for more information.
 
@@ -125,20 +125,20 @@ QT_BEGIN_NAMESPACE
     setting up the translation targets via setGeneratedShaders():
 
     \badcode
-        baker.setGeneratedShaderVariants({ QRhiShaderKey::StandardShader });
+        baker.setGeneratedShaderVariants({ QShader::StandardShader });
         QVector<QShaderBaker::GeneratedShader> targets;
-        targets.append({ QRhiShaderKey::SpirvShader, QRhiShaderVersion(100) });
-        targets.append({ QRhiShaderKey::GlslShader, QRhiShaderVersion(100, QRhiShaderVersion::GlslEs) });
-        targets.append({ QRhiShaderKey::SpirvShader, QRhiShaderVersion(120) });
-        targets.append({ QRhiShaderKey::HlslShader, QRhiShaderVersion(50) });
-        targets.append({ QRhiShaderKey::MslShader, QRhiShaderVersion(12) });
+        targets.append({ QShader::SpirvShader, QShaderVersion(100) });
+        targets.append({ QShader::GlslShader, QShaderVersion(100, QShaderVersion::GlslEs) });
+        targets.append({ QShader::SpirvShader, QShaderVersion(120) });
+        targets.append({ QShader::HlslShader, QShaderVersion(50) });
+        targets.append({ QShader::MslShader, QShaderVersion(12) });
         baker.setGeneratedShaders(targets);
-        QRhiShader shaders = baker.bake();
+        QShader shaders = baker.bake();
         if (!shaders.isValid())
             qWarning() << baker.errorMessage();
     \endcode
 
-    \sa QRhiShader
+    \sa QShader
  */
 
 struct QShaderBakerPrivate
@@ -147,9 +147,9 @@ struct QShaderBakerPrivate
 
     QString sourceFileName;
     QByteArray source;
-    QRhiShader::ShaderStage stage;
+    QShader::Stage stage;
     QVector<QShaderBaker::GeneratedShader> reqVersions;
-    QVector<QRhiShaderKey::ShaderVariant> variants;
+    QVector<QShader::Variant> variants;
     QByteArray preamble;
     QSpirvCompiler compiler;
     QString errorMessage;
@@ -206,20 +206,20 @@ void QShaderBaker::setSourceFileName(const QString &fileName)
 
     const QString suffix = QFileInfo(fileName).suffix();
     if (suffix == QStringLiteral("vert")) {
-        d->stage = QRhiShader::VertexStage;
+        d->stage = QShader::VertexStage;
     } else if (suffix == QStringLiteral("frag")) {
-        d->stage = QRhiShader::FragmentStage;
+        d->stage = QShader::FragmentStage;
     } else if (suffix == QStringLiteral("tesc")) {
-        d->stage = QRhiShader::TessControlStage;
+        d->stage = QShader::TessellationControlStage;
     } else if (suffix == QStringLiteral("tese")) {
-        d->stage = QRhiShader::TessEvaluationStage;
+        d->stage = QShader::TessellationEvaluationStage;
     } else if (suffix == QStringLiteral("geom")) {
-        d->stage = QRhiShader::GeometryStage;
+        d->stage = QShader::GeometryStage;
     } else if (suffix == QStringLiteral("comp")) {
-        d->stage = QRhiShader::ComputeStage;
+        d->stage = QShader::ComputeStage;
     } else {
         qWarning("QShaderBaker: Unknown shader stage, defaulting to vertex");
-        d->stage = QRhiShader::VertexStage;
+        d->stage = QShader::VertexStage;
     }
 }
 
@@ -228,7 +228,7 @@ void QShaderBaker::setSourceFileName(const QString &fileName)
     that will be read when calling bake(). The shader stage is specified by \a
     stage.
  */
-void QShaderBaker::setSourceFileName(const QString &fileName, QRhiShader::ShaderStage stage)
+void QShaderBaker::setSourceFileName(const QString &fileName, QShader::Stage stage)
 {
     if (d->readFile(fileName))
         d->stage = stage;
@@ -239,7 +239,7 @@ void QShaderBaker::setSourceFileName(const QString &fileName, QRhiShader::Shader
     files. \a stage specifies the shader stage, while the optional \a fileName
     contains a filename that is used in the error messages.
  */
-void QShaderBaker::setSourceDevice(QIODevice *device, QRhiShader::ShaderStage stage, const QString &fileName)
+void QShaderBaker::setSourceDevice(QIODevice *device, QShader::Stage stage, const QString &fileName)
 {
     setSourceString(device->readAll(), stage, fileName);
 }
@@ -249,7 +249,7 @@ void QShaderBaker::setSourceDevice(QIODevice *device, QRhiShader::ShaderStage st
     while the optional \a fileName contains a filename that is used in the
     error messages.
  */
-void QShaderBaker::setSourceString(const QByteArray &sourceString, QRhiShader::ShaderStage stage, const QString &fileName)
+void QShaderBaker::setSourceString(const QByteArray &sourceString, QShader::Stage stage, const QString &fileName)
 {
     d->sourceFileName = fileName; // for error messages, include handling, etc.
     d->source = sourceString;
@@ -259,7 +259,7 @@ void QShaderBaker::setSourceString(const QByteArray &sourceString, QRhiShader::S
 /*!
     \typedef QShaderBaker::GeneratedShader
 
-    Synonym for QPair<QRhiShaderKey::ShaderSource, QRhiShaderVersion>.
+    Synonym for QPair<QShader::Source, QShaderVersion>.
 */
 
 /*!
@@ -267,13 +267,13 @@ void QShaderBaker::setSourceString(const QByteArray &sourceString, QRhiShader::S
     generated by default so calling this function before bake() is mandatory
 
     \note when this function is not called or \a v is empty or contains only invalid
-    entries, the resulting QRhiShader will be empty and thus invalid.
+    entries, the resulting QShader will be empty and thus invalid.
 
     For example, the minimal possible baking target is SPIR-V, without any
     additional translations to other languages. To request this, do:
 
     \badcode
-        baker.setGeneratedShaders({ QRhiShaderKey::SpirvShader, QRhiShaderVersion(100) });
+        baker.setGeneratedShaders({ QShader::SpirvShader, QShaderVersion(100) });
     \endcode
  */
 void QShaderBaker::setGeneratedShaders(const QVector<GeneratedShader> &v)
@@ -283,14 +283,14 @@ void QShaderBaker::setGeneratedShaders(const QVector<GeneratedShader> &v)
 
 /*!
     Specifies which shader variants are generated. Each shader version can have
-    multiple variants in the resulting QRhiShader.
+    multiple variants in the resulting QShader.
 
-    In most cases \a v contains a single entry, QRhiShaderKey::StandardShader.
+    In most cases \a v contains a single entry, QShader::StandardShader.
 
-    \note when no variants are set, the resulting QRhiShader will be empty and
+    \note when no variants are set, the resulting QShader will be empty and
     thus invalid.
  */
-void QShaderBaker::setGeneratedShaderVariants(const QVector<QRhiShaderKey::ShaderVariant> &v)
+void QShaderBaker::setGeneratedShaderVariants(const QVector<QShader::Variant> &v)
 {
     d->variants = v;
 }
@@ -315,8 +315,8 @@ void QShaderBaker::setPreamble(const QByteArray &preamble)
 /*!
     Runs the compilation and translation process.
 
-    \return a QRhiShader instance. To check if the process was successful,
-    call QRhiShader::isValid(). When that indicates \c false, call
+    \return a QShader instance. To check if the process was successful,
+    call QShader::isValid(). When that indicates \c false, call
     errorMessage() to retrieve the log.
 
     This is an expensive operation. When calling this from applications, it can
@@ -326,13 +326,13 @@ void QShaderBaker::setPreamble(const QByteArray &preamble)
     instance can be used with different inputs again. However, a QShaderBaker
     instance should only be used on one single thread during its lifetime.
  */
-QRhiShader QShaderBaker::bake()
+QShader QShaderBaker::bake()
 {
     d->errorMessage.clear();
 
     if (d->source.isEmpty()) {
         d->errorMessage = QLatin1String("QShaderBaker: No source specified");
-        return QRhiShader();
+        return QShader();
     }
 
     d->compiler.setSourceString(d->source, d->stage, d->sourceFileName);
@@ -341,20 +341,20 @@ QRhiShader QShaderBaker::bake()
     QByteArray spirv = d->compiler.compileToSpirv();
     if (spirv.isEmpty()) {
         d->errorMessage = d->compiler.errorMessage();
-        return QRhiShader();
+        return QShader();
     }
 
     QByteArray batchableSpirv;
-    if (d->stage == QRhiShader::VertexStage && d->variants.contains(QRhiShaderKey::BatchableVertexShader)) {
+    if (d->stage == QShader::VertexStage && d->variants.contains(QShader::BatchableVertexShader)) {
         d->compiler.setFlags(QSpirvCompiler::RewriteToMakeBatchableForSG);
         batchableSpirv = d->compiler.compileToSpirv();
         if (batchableSpirv.isEmpty()) {
             d->errorMessage = d->compiler.errorMessage();
-            return QRhiShader();
+            return QShader();
         }
     }
 
-    QRhiShader bs;
+    QShader bs;
     bs.setStage(d->stage);
 
     QSpirvShader spirvShader;
@@ -369,10 +369,10 @@ QRhiShader QShaderBaker::bake()
     }
 
     for (const GeneratedShader &req: d->reqVersions) {
-        for (const QRhiShaderKey::ShaderVariant &v : d->variants) {
+        for (const QShader::Variant &v : d->variants) {
             QByteArray *currentSpirv = &spirv;
             QSpirvShader *currentSpirvShader = &spirvShader;
-            if (v == QRhiShaderKey::BatchableVertexShader) {
+            if (v == QShader::BatchableVertexShader) {
                 if (!batchableSpirv.isEmpty()) {
                     currentSpirv = &batchableSpirv;
                     currentSpirvShader = &batchableSpirvShader;
@@ -380,37 +380,37 @@ QRhiShader QShaderBaker::bake()
                     continue;
                 }
             }
-            const QRhiShaderKey key(req.first, req.second, v);
-            QRhiShaderCode shader;
+            const QShaderKey key(req.first, req.second, v);
+            QShaderCode shader;
             shader.setEntryPoint(QByteArrayLiteral("main"));
             switch (req.first) {
-            case QRhiShaderKey::SpirvShader:
+            case QShader::SpirvShader:
                 shader.setShader(*currentSpirv);
                 break;
-            case QRhiShaderKey::GlslShader:
+            case QShader::GlslShader:
             {
                 QSpirvShader::GlslFlags flags = 0;
-                if (req.second.flags().testFlag(QRhiShaderVersion::GlslEs))
+                if (req.second.flags().testFlag(QShaderVersion::GlslEs))
                     flags |= QSpirvShader::GlslEs;
                 shader.setShader(currentSpirvShader->translateToGLSL(req.second.version(), flags));
                 if (shader.shader().isEmpty()) {
                     d->errorMessage = currentSpirvShader->translationErrorMessage();
-                    return QRhiShader();
+                    return QShader();
                 }
             }
                 break;
-            case QRhiShaderKey::HlslShader:
+            case QShader::HlslShader:
                 shader.setShader(currentSpirvShader->translateToHLSL(req.second.version()));
                 if (shader.shader().isEmpty()) {
                     d->errorMessage = currentSpirvShader->translationErrorMessage();
-                    return QRhiShader();
+                    return QShader();
                 }
                 break;
-            case QRhiShaderKey::MslShader:
+            case QShader::MslShader:
                 shader.setShader(currentSpirvShader->translateToMSL(req.second.version()));
                 if (shader.shader().isEmpty()) {
                     d->errorMessage = currentSpirvShader->translationErrorMessage();
-                    return QRhiShader();
+                    return QShader();
                 }
                 shader.setEntryPoint(QByteArrayLiteral("main0"));
                 break;
@@ -430,7 +430,7 @@ QRhiShader QShaderBaker::bake()
 
     \note Errors include file read errors, compilation, and translation
     failures. Not requesting any targets or variants does not count as an error
-    even though the resulting QRhiShader is invalid.
+    even though the resulting QShader is invalid.
  */
 QString QShaderBaker::errorMessage() const
 {
