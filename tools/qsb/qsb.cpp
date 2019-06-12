@@ -190,6 +190,62 @@ static void dump(const QShader &bs)
     }
 }
 
+static void extract(const QShader &bs, const QString &what, bool batchable, const QString &outfn)
+{
+    if (what == QLatin1String("reflect")) {
+        const QByteArray reflect = bs.description().toJson();
+        if (writeToFile(reflect, outfn, true))
+            qDebug("Reflection data written to %s", qPrintable(outfn));
+        return;
+    }
+
+    if (what.contains(QLatin1Char('.'))) {
+        const QStringList typeAndVersion = what.split(QLatin1Char('.'), Qt::SkipEmptyParts);
+        QShader::Source src;
+        if (typeAndVersion[0] == QLatin1String("spirv"))
+            src = QShader::SpirvShader;
+        else if (typeAndVersion[0] == QLatin1String("glsl"))
+            src = QShader::GlslShader;
+        else if (typeAndVersion[0] == QLatin1String("hlsl"))
+            src = QShader::HlslShader;
+        else if (typeAndVersion[0] == QLatin1String("msl"))
+            src = QShader::MslShader;
+        else if (typeAndVersion[0] == QLatin1String("dxbc"))
+            src = QShader::DxbcShader;
+        else if (typeAndVersion[0] == QLatin1String("dxil"))
+            src = QShader::DxilShader;
+        else if (typeAndVersion[0] == QLatin1String("metallib"))
+            src = QShader::MetalLibShader;
+        else
+            return;
+
+        QShaderVersion::Flags flags = 0;
+        QString version = typeAndVersion[1];
+        if (version.endsWith(QLatin1String(" es"))) {
+            version = version.left(version.count() - 3);
+            flags |= QShaderVersion::GlslEs;
+        } else if (version.endsWith(QLatin1String("es"))) {
+            version = version.left(version.count() - 2);
+            flags |= QShaderVersion::GlslEs;
+        }
+        const int ver = version.toInt();
+
+        const QShader::Variant variant = batchable ? QShader::BatchableVertexShader : QShader::StandardShader;
+        const QString variantStr = sourceVariantStr(variant);
+
+        const QShaderCode code = bs.shader({ src, { ver, flags }, variant });
+        if (!code.shader().isEmpty()) {
+            if (writeToFile(code.shader(), outfn, false)) {
+                const QString shaderTypeString = sourceStr(src);
+                qDebug("%s %d%s code (variant %s) written to %s. Entry point is '%s'.",
+                       qPrintable(shaderTypeString), ver, flags.testFlag(QShaderVersion::GlslEs) ? " es" : "",
+                       qPrintable(variantStr),
+                       qPrintable(outfn), code.entryPoint().constData());
+            }
+        }
+    }
+}
+
 static QByteArray fxcProfile(const QShader &bs, const QShaderKey &k)
 {
     QByteArray t;
@@ -249,7 +305,7 @@ int main(int argc, char **argv)
                                   QObject::tr("versions"));
     cmdLineParser.addOption(mslOption);
     QCommandLineOption outputOption({ "o", "output" },
-                                     QObject::tr("Output file for the baked shader pack."),
+                                     QObject::tr("Output file for the shader pack."),
                                      QObject::tr("filename"));
     cmdLineParser.addOption(outputOption);
     QCommandLineOption fxcOption({ "c", "fxc" }, QObject::tr("In combination with --hlsl invokes fxc to store DXBC instead of HLSL."));
@@ -259,8 +315,13 @@ int main(int argc, char **argv)
     cmdLineParser.addOption(mtllibOption);
     QCommandLineOption defineOption({ "D", "define" }, QObject::tr("Define macro"), QObject::tr("name[=value]"));
     cmdLineParser.addOption(defineOption);
-    QCommandLineOption dumpOption({ "d", "dump" }, QObject::tr("Switches to dump mode. Input file is expected to be a baked shader pack."));
+    QCommandLineOption dumpOption({ "d", "dump" }, QObject::tr("Switches to dump mode. Input file is expected to be a shader pack."));
     cmdLineParser.addOption(dumpOption);
+    QCommandLineOption extractOption({ "x", "extract" }, QObject::tr("Switches to extract mode. Input file is expected to be a shader pack. "
+                                                                     "Result is written to the output specified by -o. Pass -b to choose the batchable variant. "
+                                                                     "<what>=reflect|spirv.<version>|glsl.<version>|..."),
+                                     QObject::tr("what"));
+    cmdLineParser.addOption(extractOption);
 
     cmdLineParser.process(app);
 
@@ -271,14 +332,24 @@ int main(int argc, char **argv)
 
     QShaderBaker baker;
     for (const QString &fn : cmdLineParser.positionalArguments()) {
-        if (cmdLineParser.isSet(dumpOption)) {
+        if (cmdLineParser.isSet(dumpOption) || cmdLineParser.isSet(extractOption)) {
             QByteArray buf = readFile(fn);
             if (!buf.isEmpty()) {
                 QShader bs = QShader::fromSerialized(buf);
-                if (bs.isValid())
-                    dump(bs);
-                else
+                if (bs.isValid()) {
+                    if (cmdLineParser.isSet(dumpOption)) {
+                        dump(bs);
+                    } else {
+                        if (cmdLineParser.isSet(outputOption)) {
+                            extract(bs, cmdLineParser.value(extractOption), cmdLineParser.isSet(batchableOption),
+                                    cmdLineParser.value(outputOption));
+                        } else {
+                            qWarning("No output file specified");
+                        }
+                    }
+                } else {
                     qWarning("Failed to deserialize %s", qPrintable(fn));
+                }
             }
             continue;
         }
