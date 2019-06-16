@@ -269,6 +269,10 @@ void QSpirvShaderPrivate::processResources()
     shaderDescription = QShaderDescription();
     QShaderDescriptionPrivate *dd = QShaderDescriptionPrivate::get(&shaderDescription);
 
+    dd->localSize[0] = glslGen->get_execution_mode_argument(spv::ExecutionModeLocalSize, 0);
+    dd->localSize[1] = glslGen->get_execution_mode_argument(spv::ExecutionModeLocalSize, 1);
+    dd->localSize[2] = glslGen->get_execution_mode_argument(spv::ExecutionModeLocalSize, 2);
+
     spirv_cross::ShaderResources resources = glslGen->get_shader_resources();
 
     for (const spirv_cross::Resource &r : resources.stage_inputs) {
