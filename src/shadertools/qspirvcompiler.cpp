@@ -163,6 +163,7 @@ struct QSpirvCompilerPrivate
     EShLanguage stage = EShLangVertex;
     QSpirvCompiler::Flags flags = 0;
     QByteArray preamble;
+    int batchAttrLoc = 7;
     QByteArray spirv;
     QString log;
 };
@@ -385,10 +386,15 @@ void QSpirvCompiler::setPreamble(const QByteArray &preamble)
     d->preamble = preamble;
 }
 
+void QSpirvCompiler::setSGBatchingVertexInputLocation(int location)
+{
+    d->batchAttrLoc = location;
+}
+
 QByteArray QSpirvCompiler::compileToSpirv()
 {
     if (d->stage == EShLangVertex && d->flags.testFlag(RewriteToMakeBatchableForSG) && d->batchableSource.isEmpty())
-        d->batchableSource = QShaderBatchableRewriter::addZAdjustment(d->source);
+        d->batchableSource = QShaderBatchableRewriter::addZAdjustment(d->source, d->batchAttrLoc);
 
     return d->compile() ? d->spirv : QByteArray();
 }

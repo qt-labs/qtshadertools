@@ -41,7 +41,7 @@
 
 // This is a slightly modified version of qsgshaderrewriter.cpp from
 // qtdeclarative/src/quick/scenegraph/coreapi. Here we insert an extra vertex
-// attribute (_qt_order) at location 7.
+// input (_qt_order) at the specified input location.
 
 QT_BEGIN_NAMESPACE
 
@@ -164,7 +164,7 @@ Tokenizer::Token Tokenizer::next()
     return Token_EOF;
 }
 
-QByteArray addZAdjustment(const QByteArray &input)
+QByteArray addZAdjustment(const QByteArray &input, int vertexInputLocation)
 {
     Tokenizer tok;
     tok.initialize(input);
@@ -188,7 +188,9 @@ QByteArray addZAdjustment(const QByteArray &input)
     result.reserve(1024);
     result += QByteArray::fromRawData(input.constData(), voidPos - input.constData());
 
-    result += QByteArrayLiteral("layout(location = 7) in float _qt_order;\n");
+    result += QByteArrayLiteral("layout(location = ");
+    result += QByteArray::number(vertexInputLocation);
+    result += QByteArrayLiteral(") in float _qt_order;\n");
 
     // Find first brace '{'
     while (t != Tokenizer::Token_EOF && t != Tokenizer::Token_OpenBrace) t = tok.next();

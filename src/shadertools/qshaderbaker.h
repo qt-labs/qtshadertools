@@ -65,6 +65,7 @@ public:
     void setGeneratedShaderVariants(const QVector<QShader::Variant> &v);
 
     void setPreamble(const QByteArray &preamble);
+    void setBatchableVertexShaderExtraInputLocation(int location);
 
     QShader bake();
 

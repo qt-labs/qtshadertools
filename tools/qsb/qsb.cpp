@@ -292,6 +292,10 @@ int main(int argc, char **argv)
     cmdLineParser.addPositionalArgument(QLatin1String("file"), QObject::tr("Vulkan GLSL source file to compile"), QObject::tr("file"));
     QCommandLineOption batchableOption({ "b", "batchable" }, QObject::tr("Also generates rewritten vertex shader for Qt Quick scene graph batching."));
     cmdLineParser.addOption(batchableOption);
+    QCommandLineOption batchLocOption("zorder-loc",
+                                      QObject::tr("The extra vertex input location when rewriting for batching. Defaults to 7."),
+                                      QObject::tr("location"));
+    cmdLineParser.addOption(batchLocOption);
     QCommandLineOption glslOption({ "g", "glsl" },
                                   QObject::tr("Comma separated list of GLSL versions to generate. (for example, \"100 es,120,330\")"),
                                   QObject::tr("versions"));
@@ -358,8 +362,11 @@ int main(int argc, char **argv)
 
         QVector<QShader::Variant> variants;
         variants << QShader::StandardShader;
-        if (cmdLineParser.isSet(batchableOption))
+        if (cmdLineParser.isSet(batchableOption)) {
             variants << QShader::BatchableVertexShader;
+            if (cmdLineParser.isSet(batchLocOption))
+                baker.setBatchableVertexShaderExtraInputLocation(cmdLineParser.value(batchLocOption).toInt());
+        }
 
         baker.setGeneratedShaderVariants(variants);
 

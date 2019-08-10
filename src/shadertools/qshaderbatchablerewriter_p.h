@@ -56,7 +56,7 @@
 QT_BEGIN_NAMESPACE
 
 namespace QShaderBatchableRewriter {
-QByteArray addZAdjustment(const QByteArray &input);
+QByteArray addZAdjustment(const QByteArray &input, int vertexInputLocation);
 }
 
 QT_END_NAMESPACE

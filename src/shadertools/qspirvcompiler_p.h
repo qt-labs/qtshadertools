@@ -74,6 +74,7 @@ public:
     void setSourceString(const QByteArray &sourceString, QShader::Stage stage, const QString &fileName = QString());
     void setFlags(Flags flags);
     void setPreamble(const QByteArray &preamble);
+    void setSGBatchingVertexInputLocation(int location);
 
     QByteArray compileToSpirv();
     QString errorMessage() const;

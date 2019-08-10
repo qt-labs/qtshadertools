@@ -151,6 +151,7 @@ struct QShaderBakerPrivate
     QVector<QShaderBaker::GeneratedShader> reqVersions;
     QVector<QShader::Variant> variants;
     QByteArray preamble;
+    int batchLoc = 7;
     QSpirvCompiler compiler;
     QString errorMessage;
 };
@@ -313,6 +314,17 @@ void QShaderBaker::setPreamble(const QByteArray &preamble)
 }
 
 /*!
+    When generating a QShader::BatchableVertexShader variant, \a location
+    specifies the input location for the inserted vertex input. The value is by
+    default 7 and needs to be overridden only if the vertex shader already uses
+    input location 7.
+ */
+void QShaderBaker::setBatchableVertexShaderExtraInputLocation(int location)
+{
+    d->batchLoc = location;
+}
+
+/*!
     Runs the compilation and translation process.
 
     \return a QShader instance. To check if the process was successful,
@@ -347,6 +359,7 @@ QShader QShaderBaker::bake()
     QByteArray batchableSpirv;
     if (d->stage == QShader::VertexStage && d->variants.contains(QShader::BatchableVertexShader)) {
         d->compiler.setFlags(QSpirvCompiler::RewriteToMakeBatchableForSG);
+        d->compiler.setSGBatchingVertexInputLocation(d->batchLoc);
         batchableSpirv = d->compiler.compileToSpirv();
         if (batchableSpirv.isEmpty()) {
             d->errorMessage = d->compiler.errorMessage();
