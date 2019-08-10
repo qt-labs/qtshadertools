@@ -488,6 +488,7 @@ QByteArray QSpirvShader::translateToHLSL(int version) const
         spirv_cross::CompilerHLSL::Options options;
         options.shader_model = version;
         options.point_size_compat = true;
+        options.point_coord_compat = true;
         d->hlslGen->set_hlsl_options(options);
 
         const std::string hlsl = d->hlslGen->compile();
