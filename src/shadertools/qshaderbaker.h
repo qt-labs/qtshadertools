@@ -38,7 +38,7 @@
 #define QSHADERBAKER_H
 
 #include <QtShaderTools/qtshadertoolsglobal.h>
-#include <QtGui/private/qshader_p_p.h>
+#include <QtGui/private/qshader_p.h>
 
 QT_BEGIN_NAMESPACE
 
