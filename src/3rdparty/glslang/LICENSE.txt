@@ -1,7 +1,31 @@
+Here, glslang proper means core GLSL parsing, HLSL parsing, and SPIR-V code
+generation. Glslang proper requires use of two licenses, one that covers
+non-preprocessing and an additional one that covers preprocessing.
+
+Bison was removed long ago. You can build glslang from the source grammar,
+using tools of your choice, without using bison or any bison files.
+
+Other parts, outside of glslang proper, include:
+
+- gl_types.h, only needed for OpenGL-like reflection, and can be left out of
+  a parse and codegen project.  See it for its license.
+
+- update_glslang_sources.py, which is not part of the project proper and does
+  not need to be used.
+
+- the SPIR-V "remapper", which is optional, but has the same license as
+  glslang proper
+
+- Google tests and SPIR-V tools, and anything in the external subdirectory
+  are external and optional; see them for their respective licenses.
+
+--------------------------------------------------------------------------------
+
+The core of glslang-proper, minus the preprocessor is licenced as follows:
+
 //
-// Copyright (C) 2002-2005  3Dlabs Inc. Ltd.
-// Copyright (C) 2013 LunarG, Inc.
 // Copyright (C) 2015-2018 Google, Inc.
+// Copyright (C) <various other dates and companies>
 //
 // All rights reserved.
 //
@@ -34,6 +58,11 @@
 // ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 //
+
+--------------------------------------------------------------------------------
+
+The preprocessor has the core license stated above, plus an additional licence:
+
 /****************************************************************************\
 Copyright (c) 2002, NVIDIA Corporation.
 
@@ -77,145 +106,3 @@ NVIDIA SOFTWARE, HOWEVER CAUSED AND WHETHER UNDER THEORY OF CONTRACT,
 TORT (INCLUDING NEGLIGENCE), STRICT LIABILITY OR OTHERWISE, EVEN IF
 NVIDIA HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \****************************************************************************/
-
-//
-// For recording and playing back the stream of tokens in a macro definition.
-//
-
-#ifndef _CRT_SECURE_NO_WARNINGS
-#define _CRT_SECURE_NO_WARNINGS
-#endif
-#if (defined(_MSC_VER) && _MSC_VER < 1900 /*vs2015*/)
-#define snprintf sprintf_s
-#endif
-
-#include <cassert>
-#include <cstdlib>
-#include <cstring>
-#include <cctype>
-
-#include "PpContext.h"
-#include "PpTokens.h"
-
-namespace glslang {
-
-// Add a token (including backing string) to the end of a macro
-// token stream, for later playback.
-void TPpContext::TokenStream::putToken(int atom, TPpToken* ppToken)
-{
-    TokenStream::Token streamToken(atom, *ppToken);
-    stream.push_back(streamToken);
-}
-
-// Read the next token from a macro token stream.
-int TPpContext::TokenStream::getToken(TParseContextBase& parseContext, TPpToken *ppToken)
-{
-    if (atEnd())
-        return EndOfInput;
-
-    int atom = stream[currentPos++].get(*ppToken);
-    ppToken->loc = parseContext.getCurrentLoc();
-
-#ifndef GLSLANG_WEB
-    // Check for ##, unless the current # is the last character
-    if (atom == '#') {
-        if (peekToken('#')) {
-            parseContext.requireProfile(ppToken->loc, ~EEsProfile, "token pasting (##)");
-            parseContext.profileRequires(ppToken->loc, ~EEsProfile, 130, 0, "token pasting (##)");
-            currentPos++;
-            atom = PpAtomPaste;
-        }
-    }
-#endif
-
-    return atom;
-}
-
-// We are pasting if
-//   1. we are preceding a pasting operator within this stream
-// or
-//   2. the entire macro is preceding a pasting operator (lastTokenPastes)
-//      and we are also on the last token
-bool TPpContext::TokenStream::peekTokenizedPasting(bool lastTokenPastes)
-{
-    // 1. preceding ##?
-
-    size_t savePos = currentPos;
-    // skip white space
-    while (peekToken(' '))
-        ++currentPos;
-    if (peekToken(PpAtomPaste)) {
-        currentPos = savePos;
-        return true;
-    }
-
-    // 2. last token and we've been told after this there will be a ##
-
-    if (! lastTokenPastes)
-        return false;
-    // Getting here means the last token will be pasted, after this
-
-    // Are we at the last non-whitespace token?
-    savePos = currentPos;
-    bool moreTokens = false;
-    do {
-        if (atEnd())
-            break;
-        if (!peekToken(' ')) {
-            moreTokens = true;
-            break;
-        }
-        ++currentPos;
-    } while (true);
-    currentPos = savePos;
-
-    return !moreTokens;
-}
-
-// See if the next non-white-space tokens are two consecutive #
-bool TPpContext::TokenStream::peekUntokenizedPasting()
-{
-    // don't return early, have to restore this
-    size_t savePos = currentPos;
-
-    // skip white-space
-    while (peekToken(' '))
-        ++currentPos;
-
-    // check for ##
-    bool pasting = false;
-    if (peekToken('#')) {
-        ++currentPos;
-        if (peekToken('#'))
-            pasting = true;
-    }
-
-    currentPos = savePos;
-
-    return pasting;
-}
-
-void TPpContext::pushTokenStreamInput(TokenStream& ts, bool prepasting)
-{
-    pushInput(new tTokenInput(this, &ts, prepasting));
-    ts.reset();
-}
-
-int TPpContext::tUngotTokenInput::scan(TPpToken* ppToken)
-{
-    if (done)
-        return EndOfInput;
-
-    int ret = token;
-    *ppToken = lval;
-    done = true;
-
-    return ret;
-}
-
-void TPpContext::UngetToken(int token, TPpToken* ppToken)
-{
-    pushInput(new tUngotTokenInput(this, token, ppToken));
-}
-
-} // end namespace glslang
