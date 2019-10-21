@@ -155,24 +155,29 @@ static void dump(const QShader &bs)
 {
     QTextStream ts(stdout);
     ts << "Stage: " << stageStr(bs.stage()) << "\n\n";
-    QVector<QShaderKey> s = bs.availableShaders();
-    ts << "Has " << s.count() << " shaders: (unordered list)\n";
-    for (int i = 0; i < s.count(); ++i) {
-        ts << "  Shader " << i << ": " << sourceStr(s[i].source())
-            << " " << sourceVersionStr(s[i].sourceVersion())
-            << " [" << sourceVariantStr(s[i].sourceVariant()) << "]\n";
+    const QVector<QShaderKey> keys = bs.availableShaders();
+    ts << "Has " << keys.count() << " shaders: (unordered list)\n";
+    for (int i = 0; i < keys.count(); ++i) {
+        ts << "  Shader " << i << ": " << sourceStr(keys[i].source())
+            << " " << sourceVersionStr(keys[i].sourceVersion())
+            << " [" << sourceVariantStr(keys[i].sourceVariant()) << "]\n";
     }
     ts << "\n";
     ts << "Reflection info: " << bs.description().toJson() << "\n\n";
-    for (int i = 0; i < s.count(); ++i) {
-        ts << "Shader " << i << ": " << sourceStr(s[i].source())
-            << " " << sourceVersionStr(s[i].sourceVersion())
-            << " [" << sourceVariantStr(s[i].sourceVariant()) << "]\n";
-        QShaderCode shader = bs.shader(s[i]);
+    for (int i = 0; i < keys.count(); ++i) {
+        ts << "Shader " << i << ": " << sourceStr(keys[i].source())
+            << " " << sourceVersionStr(keys[i].sourceVersion())
+            << " [" << sourceVariantStr(keys[i].sourceVariant()) << "]\n";
+        QShaderCode shader = bs.shader(keys[i]);
         if (!shader.entryPoint().isEmpty())
             ts << "Entry point: " << shader.entryPoint() << "\n";
+        if (const QShader::NativeResourceBindingMap *map = bs.nativeResourceBindingMap(keys[i])) {
+            ts << "Native resource binding map:\n";
+            for (auto mapIt = map->cbegin(), mapItEnd = map->cend(); mapIt != mapItEnd; ++mapIt)
+                ts << mapIt.key() << " -> [" << mapIt.value().first << ", " << mapIt.value().second << "]\n";
+        }
         ts << "Contents:\n";
-        switch (s[i].source()) {
+        switch (keys[i].source()) {
         case QShader::SpirvShader:
             Q_FALLTHROUGH();
         case QShader::DxbcShader:
@@ -497,6 +502,8 @@ int main(int argc, char **argv)
                     dxbcKey.setSource(QShader::DxbcShader);
                     QShaderCode dxbcShader(bytecode, s.entryPoint());
                     bs.setShader(dxbcKey, dxbcShader);
+                    if (const QShader::NativeResourceBindingMap *map = bs.nativeResourceBindingMap(k))
+                        bs.setResourceBindingMap(dxbcKey, *map);
                     bs.removeShader(k);
                 }
             }
@@ -574,6 +581,8 @@ int main(int argc, char **argv)
                     mtlKey.setSource(QShader::MetalLibShader);
                     QShaderCode mtlShader(bytecode, s.entryPoint());
                     bs.setShader(mtlKey, mtlShader);
+                    if (const QShader::NativeResourceBindingMap *map = bs.nativeResourceBindingMap(k))
+                        bs.setResourceBindingMap(mtlKey, *map);
                     bs.removeShader(k);
                 }
             }

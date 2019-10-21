@@ -49,7 +49,7 @@
 //
 
 #include <QtShaderTools/private/qtshadertoolsglobal_p.h>
-#include <QtGui/private/qshaderdescription_p.h>
+#include <QtGui/private/qshader_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -84,7 +84,7 @@ public:
 
     QByteArray translateToGLSL(int version = 120, GlslFlags flags = GlslFlags()) const;
     QByteArray translateToHLSL(int version = 50) const;
-    QByteArray translateToMSL(int version = 12) const;
+    QByteArray translateToMSL(int version = 12, QShader::NativeResourceBindingMap *nativeBindings = nullptr) const;
 
     QString translationErrorMessage() const;
 

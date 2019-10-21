@@ -420,12 +420,16 @@ QShader QShaderBaker::bake()
                 }
                 break;
             case QShader::MslShader:
-                shader.setShader(currentSpirvShader->translateToMSL(req.second.version()));
+            {
+                QShader::NativeResourceBindingMap nativeBindings;
+                shader.setShader(currentSpirvShader->translateToMSL(req.second.version(), &nativeBindings));
                 if (shader.shader().isEmpty()) {
                     d->errorMessage = currentSpirvShader->translationErrorMessage();
                     return QShader();
                 }
                 shader.setEntryPoint(QByteArrayLiteral("main0"));
+                bs.setResourceBindingMap(key, nativeBindings);
+            }
                 break;
             default:
                 Q_UNREACHABLE();

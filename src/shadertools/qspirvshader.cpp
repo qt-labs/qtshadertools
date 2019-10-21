@@ -500,7 +500,7 @@ QByteArray QSpirvShader::translateToHLSL(int version) const
     }
 }
 
-QByteArray QSpirvShader::translateToMSL(int version) const
+QByteArray QSpirvShader::translateToMSL(int version, QShader::NativeResourceBindingMap *nativeBindings) const
 {
     d->spirvCrossErrorMsg.clear();
 
@@ -514,6 +514,31 @@ QByteArray QSpirvShader::translateToMSL(int version) const
         d->mslGen->set_msl_options(options);
 
         const std::string msl = d->mslGen->compile();
+
+        if (nativeBindings) {
+            spirv_cross::ShaderResources resources = d->mslGen->get_shader_resources();
+            for (const spirv_cross::Resource &r : resources.uniform_buffers) {
+                uint32_t binding = d->mslGen->get_decoration(r.id, spv::DecorationBinding);
+                uint32_t nativeBinding = d->mslGen->get_automatic_msl_resource_binding(r.id);
+                nativeBindings->insert(int(binding), { int(nativeBinding), 0 });
+            }
+            for (const spirv_cross::Resource &r : resources.storage_buffers) {
+                uint32_t binding = d->mslGen->get_decoration(r.id, spv::DecorationBinding);
+                uint32_t nativeBinding = d->mslGen->get_automatic_msl_resource_binding(r.id);
+                nativeBindings->insert(int(binding), { int(nativeBinding), 0 });
+            }
+            for (const spirv_cross::Resource &r : resources.sampled_images) {
+                uint32_t binding = d->mslGen->get_decoration(r.id, spv::DecorationBinding);
+                uint32_t nativeTextureBinding = d->mslGen->get_automatic_msl_resource_binding(r.id);
+                uint32_t nativeSamplerBinding = d->mslGen->get_automatic_msl_resource_binding_secondary(r.id);
+                nativeBindings->insert(int(binding), { int(nativeTextureBinding), int(nativeSamplerBinding) });
+            }
+            for (const spirv_cross::Resource &r : resources.storage_images) {
+                uint32_t binding = d->mslGen->get_decoration(r.id, spv::DecorationBinding);
+                uint32_t nativeBinding = d->mslGen->get_automatic_msl_resource_binding(r.id);
+                nativeBindings->insert(int(binding), { int(nativeBinding), 0 });
+            }
+        }
 
         return QByteArray::fromStdString(msl);
     } catch (const std::runtime_error &e) {
