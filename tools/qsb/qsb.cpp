@@ -35,6 +35,7 @@
 #include <QtCore/qprocess.h>
 #include <QtCore/qdebug.h>
 #include <QtShaderTools/qshaderbaker.h>
+#include <QtGui/private/qshader_p_p.h>
 
 static bool writeToFile(const QByteArray &buf, const QString &filename, bool text = false)
 {
@@ -154,7 +155,10 @@ static QString sourceVariantStr(const QShader::Variant &v)
 static void dump(const QShader &bs)
 {
     QTextStream ts(stdout);
-    ts << "Stage: " << stageStr(bs.stage()) << "\n\n";
+    ts << "Stage: " << stageStr(bs.stage()) << "\n";
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0))
+    ts << "QSB_VERSION: " << QShaderPrivate::get(&bs)->qsbVersion << "\n";
+#endif
     const QVector<QShaderKey> keys = bs.availableShaders();
     ts << "Has " << keys.count() << " shaders: (unordered list)\n";
     for (int i = 0; i < keys.count(); ++i) {
