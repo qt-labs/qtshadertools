@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2017 The Qt Company Ltd.
+** Copyright (C) 2019 The Qt Company Ltd.
 ** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Shader Tools module
@@ -34,8 +34,8 @@
 **
 ****************************************************************************/
 
-#ifndef QSPIRVSHADER_P_H
-#define QSPIRVSHADER_P_H
+#ifndef QSPIRVSHADERREMAP_P_H
+#define QSPIRVSHADERREMAP_P_H
 
 //
 //  W A R N I N G
@@ -49,51 +49,22 @@
 //
 
 #include <QtShaderTools/private/qtshadertoolsglobal_p.h>
-#include <QtGui/private/qshader_p.h>
+#include "qspirvshader_p.h"
 
 QT_BEGIN_NAMESPACE
 
-class QIODevice;
-struct QSpirvShaderPrivate;
-
-class Q_SHADERTOOLS_PRIVATE_EXPORT QSpirvShader
+class Q_SHADERTOOLS_PRIVATE_EXPORT QSpirvShaderRemapper
 {
 public:
-    enum GlslFlag {
-        GlslEs = 0x01,
-        FixClipSpace = 0x02,
-        FragDefaultMediump = 0x04
-    };
-    Q_DECLARE_FLAGS(GlslFlags, GlslFlag)
-
-    enum RemapFlag {
-        StripOnly = 0x01
-    };
-    Q_DECLARE_FLAGS(RemapFlags, RemapFlag)
-
-    QSpirvShader();
-    ~QSpirvShader();
-
-    void setFileName(const QString &fileName);
-    void setDevice(QIODevice *device);
-    void setSpirvBinary(const QByteArray &spirv);
-
-    QShaderDescription shaderDescription() const;
-
-    QByteArray remappedSpirvBinary(RemapFlags flags = RemapFlags(), QString *errorMessage = nullptr) const;
-
-    QByteArray translateToGLSL(int version = 120, GlslFlags flags = GlslFlags()) const;
-    QByteArray translateToHLSL(int version = 50) const;
-    QByteArray translateToMSL(int version = 12, QShader::NativeResourceBindingMap *nativeBindings = nullptr) const;
-    QString translationErrorMessage() const;
+    QByteArray remap(const QByteArray &ir, QSpirvShader::RemapFlags flags);
+    QString errorMessage() const { return remapErrorMsg; }
 
 private:
-    Q_DISABLE_COPY(QSpirvShader)
-    QSpirvShaderPrivate *d = nullptr;
-};
+    void remapErrorHandler(const std::string &s);
+    void remapLogHandler(const std::string &s);
 
-Q_DECLARE_OPERATORS_FOR_FLAGS(QSpirvShader::GlslFlags)
-Q_DECLARE_OPERATORS_FOR_FLAGS(QSpirvShader::RemapFlags)
+    QString remapErrorMsg;
+};
 
 QT_END_NAMESPACE
 

@@ -8,12 +8,14 @@ HEADERS += \
     $$PWD/qtshadertoolsglobal.h \
     $$PWD/qshaderbaker.h \
     $$PWD/qspirvshader_p.h \
+    $$PWD/qspirvshaderremap_p.h \
     $$PWD/qspirvcompiler_p.h \
     $$PWD/qshaderbatchablerewriter_p.h
 
 SOURCES += \
     $$PWD/qshaderbaker.cpp \
     $$PWD/qspirvshader.cpp \
+    $$PWD/qspirvshaderremap.cpp \
     $$PWD/qspirvcompiler.cpp \
     $$PWD/qshaderbatchablerewriter.cpp
 

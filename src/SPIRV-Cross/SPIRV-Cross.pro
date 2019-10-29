@@ -13,6 +13,8 @@ load(qt_helper_lib)
 
 SPIRVCROSS_PATH=$$PWD/../3rdparty/SPIRV-Cross
 
+DEFINES += SPIRV_CROSS_C_API_GLSL=1 SPIRV_CROSS_C_API_HLSL=1 SPIRV_CROSS_C_API_MSL=1
+
 SOURCES += \
     $$SPIRVCROSS_PATH/spirv_cfg.cpp \
     $$SPIRVCROSS_PATH/spirv_cpp.cpp \

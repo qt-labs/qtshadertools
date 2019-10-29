@@ -35,15 +35,12 @@
 ****************************************************************************/
 
 #include "qspirvshader_p.h"
+#include "qspirvshaderremap_p.h"
 #include <QtGui/private/qshaderdescription_p_p.h>
 #include <QFile>
 #include <QDebug>
 
-#include <SPIRV/SPVRemapper.h>
-
-#include <spirv_glsl.hpp>
-#include <spirv_hlsl.hpp>
-#include <spirv_msl.hpp>
+#include <spirv_cross_c.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -51,58 +48,86 @@ struct QSpirvShaderPrivate
 {
     ~QSpirvShaderPrivate();
 
-    void createGLSLCompiler();
+    void createCompiler(spvc_backend backend);
     void processResources();
 
-    QShaderDescription::InOutVariable inOutVar(const spirv_cross::Resource &r);
-    QShaderDescription::BlockVariable blockVar(uint32_t typeId,
-                                               uint32_t memberIdx,
-                                               uint32_t memberTypeId);
-
-    void remapErrorHandler(const std::string &s);
-    void remapLogHandler(const std::string &s);
+    QShaderDescription::InOutVariable inOutVar(const spvc_reflected_resource &r);
+    QShaderDescription::BlockVariable blockVar(spvc_type_id typeId, uint32_t memberIdx);
 
     QByteArray ir;
     QShaderDescription shaderDescription;
 
-    spirv_cross::CompilerGLSL *glslGen = nullptr;
-    spirv_cross::CompilerHLSL *hlslGen = nullptr;
-    spirv_cross::CompilerMSL *mslGen = nullptr;
+    spvc_context ctx = nullptr;
+    spvc_compiler glslGen = nullptr;
+    spvc_compiler hlslGen = nullptr;
+    spvc_compiler mslGen = nullptr;
 
     QString spirvCrossErrorMsg;
-    QString remapErrorMsg;
 };
 
 QSpirvShaderPrivate::~QSpirvShaderPrivate()
 {
-    delete mslGen;
-    delete hlslGen;
-    delete glslGen;
+    spvc_context_destroy(ctx);
 }
 
-void QSpirvShaderPrivate::createGLSLCompiler()
+void QSpirvShaderPrivate::createCompiler(spvc_backend backend)
 {
-    delete glslGen;
-    glslGen = new spirv_cross::CompilerGLSL(reinterpret_cast<const uint32_t *>(ir.constData()), ir.size() / 4);
+    if (!ctx) {
+        if (spvc_context_create(&ctx) != SPVC_SUCCESS) {
+            qWarning("Failed to create SPIRV-Cross context");
+            return;
+        }
+    }
+
+    const SpvId *spirv = reinterpret_cast<const SpvId *>(ir.constData());
+    size_t wordCount = ir.size() / sizeof(SpvId);
+    spvc_parsed_ir parsedIr;
+    if (spvc_context_parse_spirv(ctx, spirv, wordCount, &parsedIr) != SPVC_SUCCESS) {
+        qWarning("Failed to parse SPIR-V: %s", spvc_context_get_last_error_string(ctx));
+        return;
+    }
+
+    spvc_compiler *outCompiler = nullptr;
+    switch (backend) {
+    case SPVC_BACKEND_GLSL:
+        outCompiler = &glslGen;
+        break;
+    case SPVC_BACKEND_HLSL:
+        outCompiler = &hlslGen;
+        break;
+    case SPVC_BACKEND_MSL:
+        outCompiler = &mslGen;
+        break;
+    default:
+        return;
+    }
+
+    if (spvc_context_create_compiler(ctx, backend, parsedIr,
+                                     SPVC_CAPTURE_MODE_TAKE_OWNERSHIP, outCompiler) != SPVC_SUCCESS)
+    {
+        qWarning("Failed to create SPIRV-Cross compiler: %s", spvc_context_get_last_error_string(ctx));
+        return;
+    }
 }
 
-static QShaderDescription::VariableType matVarType(const spirv_cross::SPIRType &t, QShaderDescription::VariableType compType)
+static QShaderDescription::VariableType matVarType(const spvc_type &t, QShaderDescription::VariableType compType)
 {
-    switch (t.columns) {
+    const unsigned vecsize = spvc_type_get_vector_size(t);
+    switch (spvc_type_get_columns(t)) {
     case 2:
-        return QShaderDescription::VariableType(compType + 4 + (t.vecsize == 3 ? 1 : t.vecsize == 4 ? 2 : 0));
+        return QShaderDescription::VariableType(compType + 4 + (vecsize == 3 ? 1 : vecsize == 4 ? 2 : 0));
     case 3:
-        return QShaderDescription::VariableType(compType + 7 + (t.vecsize == 2 ? 1 : t.vecsize == 4 ? 2 : 0));
+        return QShaderDescription::VariableType(compType + 7 + (vecsize == 2 ? 1 : vecsize == 4 ? 2 : 0));
     case 4:
-        return QShaderDescription::VariableType(compType + 10 + (t.vecsize == 2 ? 1 : t.vecsize == 3 ? 2 : 0));
+        return QShaderDescription::VariableType(compType + 10 + (vecsize == 2 ? 1 : vecsize == 3 ? 2 : 0));
     default:
         return QShaderDescription::Unknown;
     }
 }
 
-static QShaderDescription::VariableType vecVarType(const spirv_cross::SPIRType &t, QShaderDescription::VariableType compType)
+static QShaderDescription::VariableType vecVarType(const spvc_type &t, QShaderDescription::VariableType compType)
 {
-    switch (t.vecsize) {
+    switch (spvc_type_get_vector_size(t)) {
     case 1:
         return compType;
     case 2:
@@ -116,104 +141,118 @@ static QShaderDescription::VariableType vecVarType(const spirv_cross::SPIRType &
     }
 }
 
-static QShaderDescription::VariableType sampledImageVarType(const spirv_cross::SPIRType &t)
+static QShaderDescription::VariableType sampledImageVarType(const spvc_type &t)
 {
-    switch (t.image.dim) {
-    case spv::Dim1D:
-        return t.image.arrayed ? QShaderDescription::Sampler1DArray : QShaderDescription::Sampler1D;
-    case spv::Dim2D:
-        return t.image.arrayed
-                ? (t.image.ms ? QShaderDescription::Sampler2DMSArray : QShaderDescription::Sampler2DArray)
-                : (t.image.ms ? QShaderDescription::Sampler2DMS : QShaderDescription::Sampler2D);
-    case spv::Dim3D:
-        return t.image.arrayed ? QShaderDescription::Sampler3DArray : QShaderDescription::Sampler3D;
-    case spv::DimCube:
-        return t.image.arrayed ? QShaderDescription::SamplerCubeArray : QShaderDescription::SamplerCube;
-    case spv::DimRect:
+    switch (spvc_type_get_image_dimension(t)) {
+    case SpvDim1D:
+        return spvc_type_get_image_arrayed(t) ? QShaderDescription::Sampler1DArray
+                                              : QShaderDescription::Sampler1D;
+    case SpvDim2D:
+        return spvc_type_get_image_arrayed(t)
+                ? (spvc_type_get_image_multisampled(t) ? QShaderDescription::Sampler2DMSArray
+                                                       : QShaderDescription::Sampler2DArray)
+                : (spvc_type_get_image_multisampled(t) ? QShaderDescription::Sampler2DMS
+                                                       : QShaderDescription::Sampler2D);
+    case SpvDim3D:
+        return spvc_type_get_image_arrayed(t) ? QShaderDescription::Sampler3DArray
+                                              : QShaderDescription::Sampler3D;
+    case SpvDimCube:
+        return spvc_type_get_image_arrayed(t) ? QShaderDescription::SamplerCubeArray
+                                              : QShaderDescription::SamplerCube;
+    case SpvDimRect:
         return QShaderDescription::SamplerRect;
-    case spv::DimBuffer:
+    case SpvDimBuffer:
         return QShaderDescription::SamplerBuffer;
     default:
         return QShaderDescription::Unknown;
     }
 }
 
-static QShaderDescription::VariableType imageVarType(const spirv_cross::SPIRType &t)
+static QShaderDescription::VariableType imageVarType(const spvc_type &t)
 {
-    switch (t.image.dim) {
-    case spv::Dim1D:
-        return t.image.arrayed ? QShaderDescription::Image1DArray : QShaderDescription::Image1D;
-    case spv::Dim2D:
-        return t.image.arrayed
-                ? (t.image.ms ? QShaderDescription::Image2DMSArray : QShaderDescription::Image2DArray)
-                : (t.image.ms ? QShaderDescription::Image2DMS : QShaderDescription::Image2D);
-    case spv::Dim3D:
-        return t.image.arrayed ? QShaderDescription::Image3DArray : QShaderDescription::Image3D;
-    case spv::DimCube:
-        return t.image.arrayed ? QShaderDescription::ImageCubeArray : QShaderDescription::ImageCube;
-    case spv::DimRect:
+    switch (spvc_type_get_image_dimension(t)) {
+    case SpvDim1D:
+        return spvc_type_get_image_arrayed(t) ? QShaderDescription::Image1DArray
+                                              : QShaderDescription::Image1D;
+    case SpvDim2D:
+        return spvc_type_get_image_arrayed(t)
+                ? (spvc_type_get_image_multisampled(t) ? QShaderDescription::Image2DMSArray
+                                                       : QShaderDescription::Image2DArray)
+                : (spvc_type_get_image_multisampled(t) ? QShaderDescription::Image2DMS
+                                                       : QShaderDescription::Image2D);
+    case SpvDim3D:
+        return spvc_type_get_image_arrayed(t) ? QShaderDescription::Image3DArray
+                                              : QShaderDescription::Image3D;
+    case SpvDimCube:
+        return spvc_type_get_image_arrayed(t) ? QShaderDescription::ImageCubeArray
+                                              : QShaderDescription::ImageCube;
+    case SpvDimRect:
         return QShaderDescription::ImageRect;
-    case spv::DimBuffer:
+    case SpvDimBuffer:
         return QShaderDescription::ImageBuffer;
     default:
         return QShaderDescription::Unknown;
     }
 }
 
-static QShaderDescription::VariableType varType(const spirv_cross::SPIRType &t)
+static QShaderDescription::VariableType varType(const spvc_type &t)
 {
     QShaderDescription::VariableType vt = QShaderDescription::Unknown;
-    switch (t.basetype) {
-    case spirv_cross::SPIRType::Float:
-        vt = t.columns > 1 ? matVarType(t, QShaderDescription::Float) : vecVarType(t, QShaderDescription::Float);
+    const spvc_basetype basetype = spvc_type_get_basetype(t);
+    switch (basetype) {
+    case SPVC_BASETYPE_FP32:
+        vt = spvc_type_get_columns(t) > 1 ? matVarType(t, QShaderDescription::Float)
+                                          : vecVarType(t, QShaderDescription::Float);
         break;
-    case spirv_cross::SPIRType::Double:
-        vt = t.columns > 1 ? matVarType(t, QShaderDescription::Double) : vecVarType(t, QShaderDescription::Double);
+    case SPVC_BASETYPE_FP64:
+        vt = spvc_type_get_columns(t) > 1 ? matVarType(t, QShaderDescription::Double)
+                                          : vecVarType(t, QShaderDescription::Double);
         break;
-    case spirv_cross::SPIRType::UInt:
+    case SPVC_BASETYPE_UINT32:
         vt = vecVarType(t, QShaderDescription::Uint);
         break;
-    case spirv_cross::SPIRType::Int:
+    case SPVC_BASETYPE_INT32:
         vt = vecVarType(t, QShaderDescription::Int);
         break;
-    case spirv_cross::SPIRType::Boolean:
+    case SPVC_BASETYPE_BOOLEAN:
         vt = vecVarType(t, QShaderDescription::Uint);
         break;
-    case spirv_cross::SPIRType::SampledImage:
+    case SPVC_BASETYPE_SAMPLED_IMAGE:
         vt = sampledImageVarType(t);
         break;
-    case spirv_cross::SPIRType::Image:
+    case SPVC_BASETYPE_IMAGE:
         vt = imageVarType(t);
         break;
-    case spirv_cross::SPIRType::Struct:
+    case SPVC_BASETYPE_STRUCT:
         vt = QShaderDescription::Struct;
         break;
     default:
         // can encounter types we do not (yet) handle, return Unknown for those
+        qWarning("Unsupported base type %d", basetype);
         break;
     }
     return vt;
 }
 
-QShaderDescription::InOutVariable QSpirvShaderPrivate::inOutVar(const spirv_cross::Resource &r)
+QShaderDescription::InOutVariable QSpirvShaderPrivate::inOutVar(const spvc_reflected_resource &r)
 {
     QShaderDescription::InOutVariable v;
     v.name = QString::fromStdString(r.name);
 
-    const spirv_cross::SPIRType &t = glslGen->get_type(r.base_type_id);
+    spvc_type t = spvc_compiler_get_type_handle(glslGen, r.base_type_id);
     v.type = varType(t);
 
-    if (glslGen->has_decoration(r.id, spv::DecorationLocation))
-        v.location = glslGen->get_decoration(r.id, spv::DecorationLocation);
+    if (spvc_compiler_has_decoration(glslGen, r.id, SpvDecorationLocation))
+        v.location = spvc_compiler_get_decoration(glslGen, r.id, SpvDecorationLocation);
 
-    if (glslGen->has_decoration(r.id, spv::DecorationBinding))
-        v.binding = glslGen->get_decoration(r.id, spv::DecorationBinding);
+    if (spvc_compiler_has_decoration(glslGen, r.id, SpvDecorationBinding))
+        v.binding = spvc_compiler_get_decoration(glslGen, r.id, SpvDecorationBinding);
 
-    if (glslGen->has_decoration(r.id, spv::DecorationDescriptorSet))
-        v.descriptorSet = glslGen->get_decoration(r.id, spv::DecorationDescriptorSet);
+    if (spvc_compiler_has_decoration(glslGen, r.id, SpvDecorationDescriptorSet))
+        v.descriptorSet = spvc_compiler_get_decoration(glslGen, r.id, SpvDecorationDescriptorSet);
 
-    if (t.basetype == spirv_cross::SPIRType::Image) {
-        v.imageFormat = QShaderDescription::ImageFormat(t.image.format);
+    if (spvc_type_get_basetype(t) == SPVC_BASETYPE_IMAGE) {
+        v.imageFormat = QShaderDescription::ImageFormat(spvc_type_get_image_storage_format(t));
 
         // t.image.access is relevant for OpenCL kernels only so ignore.
 
@@ -227,38 +266,46 @@ QShaderDescription::InOutVariable QSpirvShaderPrivate::inOutVar(const spirv_cros
     return v;
 }
 
-QShaderDescription::BlockVariable QSpirvShaderPrivate::blockVar(uint32_t typeId,
-                                                                uint32_t memberIdx,
-                                                                uint32_t memberTypeId)
+QShaderDescription::BlockVariable QSpirvShaderPrivate::blockVar(spvc_type_id typeId, uint32_t memberIdx)
 {
     QShaderDescription::BlockVariable v;
-    v.name = QString::fromStdString(glslGen->get_member_name(typeId, memberIdx));
+    v.name = QString::fromUtf8(spvc_compiler_get_member_name(glslGen, typeId, memberIdx));
 
-    const spirv_cross::SPIRType &memberType(glslGen->get_type(memberTypeId));
+    spvc_type t = spvc_compiler_get_type_handle(glslGen, typeId);
+    spvc_type_id memberTypeId = spvc_type_get_member_type(t, memberIdx);
+    spvc_type memberType = spvc_compiler_get_type_handle(glslGen, memberTypeId);
     v.type = varType(memberType);
 
-    const spirv_cross::SPIRType &t = glslGen->get_type(typeId);
-    v.offset = glslGen->type_struct_member_offset(t, memberIdx);
-    v.size = int(glslGen->get_declared_struct_member_size(t, memberIdx));
+    unsigned offset = 0;
+    if (spvc_compiler_type_struct_member_offset(glslGen, t, memberIdx, &offset) == SPVC_SUCCESS)
+        v.offset = int(offset);
 
-    for (uint32_t dimSize : memberType.array)
-        v.arrayDims.append(dimSize);
+    size_t size = 0;
+    if (spvc_compiler_get_declared_struct_member_size(glslGen, t, memberIdx, &size) == SPVC_SUCCESS)
+        v.size = int(size);
 
-    if (glslGen->has_member_decoration(typeId, memberIdx, spv::DecorationArrayStride))
-        v.arrayStride = glslGen->type_struct_member_array_stride(t, memberIdx);
+    for (unsigned i = 0, dimCount = spvc_type_get_num_array_dimensions(memberType); i < dimCount; ++i)
+        v.arrayDims.append(int(spvc_type_get_array_dimension(memberType, i)));
 
-    if (glslGen->has_member_decoration(typeId, memberIdx, spv::DecorationMatrixStride))
-        v.matrixStride = glslGen->type_struct_member_matrix_stride(t, memberIdx);
+    if (spvc_compiler_has_member_decoration(glslGen, typeId, memberIdx, SpvDecorationArrayStride)) {
+        unsigned stride = 0;
+        if (spvc_compiler_type_struct_member_array_stride(glslGen, t, memberIdx, &stride) == SPVC_SUCCESS)
+            v.arrayStride = int(stride);
+    }
 
-    if (glslGen->has_member_decoration(typeId, memberIdx, spv::DecorationRowMajor))
+    if (spvc_compiler_has_member_decoration(glslGen, typeId, memberIdx, SpvDecorationMatrixStride)) {
+        unsigned stride = 0;
+        if (spvc_compiler_type_struct_member_matrix_stride(glslGen, t, memberIdx, &stride) == SPVC_SUCCESS)
+            v.matrixStride = int(stride);
+    }
+
+    if (spvc_compiler_has_member_decoration(glslGen, typeId, memberIdx, SpvDecorationRowMajor))
         v.matrixIsRowMajor = true;
 
     if (v.type == QShaderDescription::Struct) {
-        uint32_t memberMemberIdx = 0;
-        for (uint32_t memberMemberType : memberType.member_types) {
-            v.structMembers.append(blockVar(memberType.self, memberMemberIdx, memberMemberType));
-            ++memberMemberIdx;
-        }
+        unsigned count = spvc_type_get_num_member_types(memberType);
+        for (unsigned idx = 0; idx < count; ++idx)
+            v.structMembers.append(blockVar(spvc_type_get_base_type_id(memberType), idx));
     }
 
     return v;
@@ -266,94 +313,140 @@ QShaderDescription::BlockVariable QSpirvShaderPrivate::blockVar(uint32_t typeId,
 
 void QSpirvShaderPrivate::processResources()
 {
+    if (!glslGen)
+        return;
+
     shaderDescription = QShaderDescription();
     QShaderDescriptionPrivate *dd = QShaderDescriptionPrivate::get(&shaderDescription);
 
-    dd->localSize[0] = glslGen->get_execution_mode_argument(spv::ExecutionModeLocalSize, 0);
-    dd->localSize[1] = glslGen->get_execution_mode_argument(spv::ExecutionModeLocalSize, 1);
-    dd->localSize[2] = glslGen->get_execution_mode_argument(spv::ExecutionModeLocalSize, 2);
+    dd->localSize[0] = spvc_compiler_get_execution_mode_argument_by_index(glslGen, SpvExecutionModeLocalSize, 0);
+    dd->localSize[1] = spvc_compiler_get_execution_mode_argument_by_index(glslGen, SpvExecutionModeLocalSize, 1);
+    dd->localSize[2] = spvc_compiler_get_execution_mode_argument_by_index(glslGen, SpvExecutionModeLocalSize, 2);
 
-    spirv_cross::ShaderResources resources = glslGen->get_shader_resources();
-
-    for (const spirv_cross::Resource &r : resources.stage_inputs) {
-        const QShaderDescription::InOutVariable v = inOutVar(r);
-        if (v.type != QShaderDescription::Unknown)
-            dd->inVars.append(v);
+    spvc_resources resources;
+    if (spvc_compiler_create_shader_resources(glslGen, &resources) != SPVC_SUCCESS) {
+        qWarning("Failed to get shader resources: %s", spvc_context_get_last_error_string(ctx));
+        return;
     }
 
-    for (const spirv_cross::Resource &r : resources.stage_outputs) {
-        const QShaderDescription::InOutVariable v = inOutVar(r);
-        if (v.type != QShaderDescription::Unknown)
-            dd->outVars.append(v);
+    const spvc_reflected_resource *resourceList = nullptr;
+    size_t resourceListCount = 0;
+
+    if (spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_STAGE_INPUT,
+                                                  &resourceList, &resourceListCount) == SPVC_SUCCESS)
+    {
+        for (size_t i = 0; i < resourceListCount; ++i) {
+            const QShaderDescription::InOutVariable v = inOutVar(resourceList[i]);
+            if (v.type != QShaderDescription::Unknown)
+                dd->inVars.append(v);
+        }
+    }
+
+    if (spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_STAGE_OUTPUT,
+                                                  &resourceList, &resourceListCount) == SPVC_SUCCESS)
+    {
+        for (size_t i = 0; i < resourceListCount; ++i) {
+            const QShaderDescription::InOutVariable v = inOutVar(resourceList[i]);
+            if (v.type != QShaderDescription::Unknown)
+                dd->outVars.append(v);
+        }
     }
 
     // uniform blocks map to either a uniform buffer or a plain struct
-    for (const spirv_cross::Resource &r : resources.uniform_buffers) {
-        const spirv_cross::SPIRType &t = glslGen->get_type(r.base_type_id);
-        QShaderDescription::UniformBlock block;
-        block.blockName = QString::fromStdString(r.name);
-        block.structName = QString::fromStdString(glslGen->get_name(r.id));
-        block.size = int(glslGen->get_declared_struct_size(t));
-        if (glslGen->has_decoration(r.id, spv::DecorationBinding))
-            block.binding = glslGen->get_decoration(r.id, spv::DecorationBinding);
-        if (glslGen->has_decoration(r.id, spv::DecorationDescriptorSet))
-            block.descriptorSet = glslGen->get_decoration(r.id, spv::DecorationDescriptorSet);
-        uint32_t idx = 0;
-        for (uint32_t memberTypeId : t.member_types) {
-            const QShaderDescription::BlockVariable v = blockVar(r.base_type_id, idx, memberTypeId);
-            ++idx;
-            if (v.type != QShaderDescription::Unknown)
-                block.members.append(v);
+    if (spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_UNIFORM_BUFFER,
+                                                  &resourceList, &resourceListCount) == SPVC_SUCCESS)
+    {
+        for (size_t i = 0; i < resourceListCount; ++i) {
+            const spvc_reflected_resource &r(resourceList[i]);
+            spvc_type t = spvc_compiler_get_type_handle(glslGen, r.base_type_id);
+            QShaderDescription::UniformBlock block;
+            block.blockName = QString::fromUtf8(r.name);
+            block.structName = QString::fromUtf8(spvc_compiler_get_name(glslGen, r.id));
+            size_t size = 0;
+            spvc_compiler_get_declared_struct_size(glslGen, t, &size);
+            block.size = int(size);
+            if (spvc_compiler_has_decoration(glslGen, r.id, SpvDecorationBinding))
+                block.binding = int(spvc_compiler_get_decoration(glslGen, r.id, SpvDecorationBinding));
+            if (spvc_compiler_has_decoration(glslGen, r.id, SpvDecorationDescriptorSet))
+                block.descriptorSet = int(spvc_compiler_get_decoration(glslGen, r.id, SpvDecorationDescriptorSet));
+            unsigned count = spvc_type_get_num_member_types(t);
+            for (unsigned idx = 0; idx < count; ++idx) {
+                const QShaderDescription::BlockVariable v = blockVar(r.base_type_id, idx);
+                if (v.type != QShaderDescription::Unknown)
+                    block.members.append(v);
+            }
+            dd->uniformBlocks.append(block);
         }
-        dd->uniformBlocks.append(block);
     }
 
     // push constant blocks map to a plain GLSL struct regardless of version
-    for (const spirv_cross::Resource &r : resources.push_constant_buffers) {
-        const spirv_cross::SPIRType &t = glslGen->get_type(r.base_type_id);
-        QShaderDescription::PushConstantBlock block;
-        block.name = QString::fromStdString(glslGen->get_name(r.id));
-        block.size = int(glslGen->get_declared_struct_size(t));
-        uint32_t idx = 0;
-        for (uint32_t memberTypeId : t.member_types) {
-            const QShaderDescription::BlockVariable v = blockVar(r.base_type_id, idx, memberTypeId);
-            ++idx;
-            if (v.type != QShaderDescription::Unknown)
-                block.members.append(v);
+    if (spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_PUSH_CONSTANT,
+                                                  &resourceList, &resourceListCount) == SPVC_SUCCESS)
+    {
+        for (size_t i = 0; i < resourceListCount; ++i) {
+            const spvc_reflected_resource &r(resourceList[i]);
+            spvc_type t = spvc_compiler_get_type_handle(glslGen, r.base_type_id);
+            QShaderDescription::PushConstantBlock block;
+            block.name = QString::fromUtf8(spvc_compiler_get_name(glslGen, r.id));
+            size_t size = 0;
+            spvc_compiler_get_declared_struct_size(glslGen, t, &size);
+            block.size = int(size);
+            unsigned count = spvc_type_get_num_member_types(t);
+            for (unsigned idx = 0; idx < count; ++idx) {
+                const QShaderDescription::BlockVariable v = blockVar(r.base_type_id, idx);
+                if (v.type != QShaderDescription::Unknown)
+                    block.members.append(v);
+            }
+            dd->pushConstantBlocks.append(block);
         }
-        dd->pushConstantBlocks.append(block);
     }
 
-    for (const spirv_cross::Resource &r : resources.storage_buffers) {
-        const spirv_cross::SPIRType &t = glslGen->get_type(r.base_type_id);
-        QShaderDescription::StorageBlock block;
-        block.blockName = QString::fromStdString(r.name);
-        block.instanceName = QString::fromStdString(glslGen->get_name(r.id));
-        block.knownSize = int(glslGen->get_declared_struct_size(t));
-        if (glslGen->has_decoration(r.id, spv::DecorationBinding))
-            block.binding = glslGen->get_decoration(r.id, spv::DecorationBinding);
-        if (glslGen->has_decoration(r.id, spv::DecorationDescriptorSet))
-            block.descriptorSet = glslGen->get_decoration(r.id, spv::DecorationDescriptorSet);
-        uint32_t idx = 0;
-        for (uint32_t memberTypeId : t.member_types) {
-            const QShaderDescription::BlockVariable v = blockVar(r.base_type_id, idx, memberTypeId);
-            ++idx;
-            if (v.type != QShaderDescription::Unknown)
-                block.members.append(v);
+    if (spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_STORAGE_BUFFER,
+                                                  &resourceList, &resourceListCount) == SPVC_SUCCESS)
+    {
+        for (size_t i = 0; i < resourceListCount; ++i) {
+            const spvc_reflected_resource &r(resourceList[i]);
+            spvc_type t = spvc_compiler_get_type_handle(glslGen, r.base_type_id);
+            QShaderDescription::StorageBlock block;
+            block.blockName = QString::fromUtf8(r.name);
+            block.instanceName = QString::fromUtf8(spvc_compiler_get_name(glslGen, r.id));
+            size_t size = 0;
+            spvc_compiler_get_declared_struct_size(glslGen, t, &size);
+            block.knownSize = int(size);
+            if (spvc_compiler_has_decoration(glslGen, r.id, SpvDecorationBinding))
+                block.binding = int(spvc_compiler_get_decoration(glslGen, r.id, SpvDecorationBinding));
+            if (spvc_compiler_has_decoration(glslGen, r.id, SpvDecorationDescriptorSet))
+                block.descriptorSet = int(spvc_compiler_get_decoration(glslGen, r.id, SpvDecorationDescriptorSet));
+            unsigned count = spvc_type_get_num_member_types(t);
+            for (unsigned idx = 0; idx < count; ++idx) {
+                const QShaderDescription::BlockVariable v = blockVar(r.base_type_id, idx);
+                if (v.type != QShaderDescription::Unknown)
+                    block.members.append(v);
+            }
+            dd->storageBlocks.append(block);
         }
-        dd->storageBlocks.append(block);
     }
 
-    for (const spirv_cross::Resource &r : resources.sampled_images) {
-        const QShaderDescription::InOutVariable v = inOutVar(r);
-        if (v.type != QShaderDescription::Unknown)
-            dd->combinedImageSamplers.append(v);
+    if (spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_SAMPLED_IMAGE,
+                                                  &resourceList, &resourceListCount) == SPVC_SUCCESS)
+    {
+        for (size_t i = 0; i < resourceListCount; ++i) {
+            const spvc_reflected_resource &r(resourceList[i]);
+            const QShaderDescription::InOutVariable v = inOutVar(r);
+            if (v.type != QShaderDescription::Unknown)
+                dd->combinedImageSamplers.append(v);
+        }
     }
 
-    for (const spirv_cross::Resource &r : resources.storage_images) {
-        const QShaderDescription::InOutVariable v = inOutVar(r);
-        if (v.type != QShaderDescription::Unknown)
-            dd->storageImages.append(v);
+    if (spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_STORAGE_IMAGE,
+                                                  &resourceList, &resourceListCount) == SPVC_SUCCESS)
+    {
+        for (size_t i = 0; i < resourceListCount; ++i) {
+            const spvc_reflected_resource &r(resourceList[i]);
+            const QShaderDescription::InOutVariable v = inOutVar(r);
+            if (v.type != QShaderDescription::Unknown)
+                dd->storageImages.append(v);
+        }
     }
 }
 
@@ -380,14 +473,14 @@ void QSpirvShader::setFileName(const QString &fileName)
 void QSpirvShader::setDevice(QIODevice *device)
 {
     d->ir = device->readAll();
-    d->createGLSLCompiler();
+    d->createCompiler(SPVC_BACKEND_GLSL);
     d->processResources();
 }
 
 void QSpirvShader::setSpirvBinary(const QByteArray &spirv)
 {
     d->ir = spirv;
-    d->createGLSLCompiler();
+    d->createCompiler(SPVC_BACKEND_GLSL);
     d->processResources();
 }
 
@@ -396,155 +489,157 @@ QShaderDescription QSpirvShader::shaderDescription() const
     return d->shaderDescription;
 }
 
-void QSpirvShaderPrivate::remapErrorHandler(const std::string &s)
+QByteArray QSpirvShader::remappedSpirvBinary(RemapFlags flags, QString *errorMessage) const
 {
-    if (!remapErrorMsg.isEmpty())
-        remapErrorMsg.append(QLatin1Char('\n'));
-    remapErrorMsg.append(QString::fromStdString(s));
-}
-
-void QSpirvShaderPrivate::remapLogHandler(const std::string &)
-{
-}
-
-QByteArray QSpirvShader::strippedSpirvBinary(StripFlags flags, QString *errorMessage) const
-{
-    if (d->ir.isEmpty())
-        return QByteArray();
-
-    spv::spirvbin_t b;
-
-    d->remapErrorMsg.clear();
-    b.registerErrorHandler(std::bind(&QSpirvShaderPrivate::remapErrorHandler, d, std::placeholders::_1));
-    b.registerLogHandler(std::bind(&QSpirvShaderPrivate::remapLogHandler, d, std::placeholders::_1));
-
-    const uint32_t opts = flags.testFlag(Remap) ? spv::spirvbin_t::DO_EVERYTHING : spv::spirvbin_t::STRIP;
-
-    std::vector<uint32_t> v;
-    v.resize(d->ir.size() / 4);
-    memcpy(v.data(), d->ir.constData(), d->ir.size());
-
-    b.remap(v, opts);
-
-    if (!d->remapErrorMsg.isEmpty()) {
-        if (errorMessage)
-            *errorMessage = d->remapErrorMsg;
-        return QByteArray();
-    }
-
-    return QByteArray(reinterpret_cast<const char *>(v.data()), int(v.size()) * 4);
+    QSpirvShaderRemapper remapper;
+    QByteArray result = remapper.remap(d->ir, flags);
+    if (errorMessage)
+        *errorMessage = remapper.errorMessage();
+    return result;
 }
 
 QByteArray QSpirvShader::translateToGLSL(int version, GlslFlags flags) const
 {
     d->spirvCrossErrorMsg.clear();
 
-    try {
-        // create a new instance every time since option handling seem to be problematic
-        // (won't pick up new options on the second and subsequent compile())
-        d->createGLSLCompiler();
+    d->createCompiler(SPVC_BACKEND_GLSL);
+    if (!d->glslGen)
+        return QByteArray();
 
-        spirv_cross::CompilerGLSL::Options options;
-        options.version = version;
-        options.es = flags.testFlag(GlslEs);
-        options.vertex.fixup_clipspace = flags.testFlag(FixClipSpace);
-        options.fragment.default_float_precision = flags.testFlag(FragDefaultMediump)
-                ? spirv_cross::CompilerGLSL::Options::Mediump
-                : spirv_cross::CompilerGLSL::Options::Highp;
-        // The gl backend of QRhi is not prepared for UBOs atm. Have a uniform (heh)
-        // behavior regardless of the GLSL version.
-        options.emit_uniform_buffer_as_plain_uniforms = true;
-        d->glslGen->set_common_options(options);
+    spvc_compiler_options options = nullptr;
+    if (spvc_compiler_create_compiler_options(d->glslGen, &options) != SPVC_SUCCESS)
+        return QByteArray();
+    spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_GLSL_VERSION,
+                                   version);
+    spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_GLSL_ES,
+                                   flags.testFlag(GlslEs));
+    spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_FIXUP_DEPTH_CONVENTION,
+                                   flags.testFlag(FixClipSpace));
+    spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_GLSL_ES_DEFAULT_FLOAT_PRECISION_HIGHP,
+                                   !flags.testFlag(FragDefaultMediump));
+    // The gl backend of QRhi is not prepared for UBOs atm. Have a uniform (heh)
+    // behavior regardless of the GLSL version.
+    spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_GLSL_EMIT_UNIFORM_BUFFER_AS_PLAIN_UNIFORMS,
+                                   true);
+    spvc_compiler_install_compiler_options(d->glslGen, options);
 
-        const std::string glsl = d->glslGen->compile();
-
-        QByteArray src = QByteArray::fromStdString(glsl);
-
-        // Fix it up by adding #extension GL_ARB_separate_shader_objects : require
-        // as well in order to make Mesa and perhaps others happy.
-        const QByteArray searchStr = QByteArrayLiteral("#extension GL_ARB_shading_language_420pack : require\n#endif\n");
-        int pos = src.indexOf(searchStr);
-        if (pos >= 0) {
-            src.insert(pos + searchStr.count(), QByteArrayLiteral("#ifdef GL_ARB_separate_shader_objects\n"
-                                                                  "#extension GL_ARB_separate_shader_objects : require\n"
-                                                                  "#endif\n"));
-        }
-
-        return src;
-    } catch (const std::runtime_error &e) {
-        d->spirvCrossErrorMsg = QString::fromUtf8(e.what());
+    const char *result = nullptr;
+    if (spvc_compiler_compile(d->glslGen, &result) != SPVC_SUCCESS) {
+        d->spirvCrossErrorMsg = QString::fromUtf8(spvc_context_get_last_error_string(d->ctx));
         return QByteArray();
     }
+
+    QByteArray src(result);
+
+    // Fix it up by adding #extension GL_ARB_separate_shader_objects : require
+    // as well in order to make Mesa and perhaps others happy.
+    const QByteArray searchStr = QByteArrayLiteral("#extension GL_ARB_shading_language_420pack : require\n#endif\n");
+    int pos = src.indexOf(searchStr);
+    if (pos >= 0) {
+        src.insert(pos + searchStr.count(), QByteArrayLiteral("#ifdef GL_ARB_separate_shader_objects\n"
+                                                              "#extension GL_ARB_separate_shader_objects : require\n"
+                                                              "#endif\n"));
+    }
+
+    return src;
 }
 
 QByteArray QSpirvShader::translateToHLSL(int version) const
 {
     d->spirvCrossErrorMsg.clear();
 
-    try {
-        if (!d->hlslGen)
-            d->hlslGen = new spirv_cross::CompilerHLSL(reinterpret_cast<const uint32_t *>(d->ir.constData()), d->ir.size() / 4);
+    d->createCompiler(SPVC_BACKEND_HLSL);
+    if (!d->hlslGen)
+        return QByteArray();
 
-        spirv_cross::CompilerHLSL::Options options;
-        options.shader_model = version;
-        options.point_size_compat = true;
-        options.point_coord_compat = true;
-        d->hlslGen->set_hlsl_options(options);
+    spvc_compiler_options options = nullptr;
+    if (spvc_compiler_create_compiler_options(d->hlslGen, &options) != SPVC_SUCCESS)
+        return QByteArray();
+    spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_HLSL_SHADER_MODEL,
+                                   version);
+    spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_HLSL_POINT_SIZE_COMPAT,
+                                   true);
+    spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_HLSL_POINT_COORD_COMPAT,
+                                   true);
+    spvc_compiler_install_compiler_options(d->hlslGen, options);
 
-        const std::string hlsl = d->hlslGen->compile();
-
-        return QByteArray::fromStdString(hlsl);
-    } catch (const std::runtime_error &e) {
-        d->spirvCrossErrorMsg = QString::fromUtf8(e.what());
+    const char *result = nullptr;
+    if (spvc_compiler_compile(d->hlslGen, &result) != SPVC_SUCCESS) {
+        d->spirvCrossErrorMsg = QString::fromUtf8(spvc_context_get_last_error_string(d->ctx));
         return QByteArray();
     }
+
+    return QByteArray(result);
 }
 
 QByteArray QSpirvShader::translateToMSL(int version, QShader::NativeResourceBindingMap *nativeBindings) const
 {
     d->spirvCrossErrorMsg.clear();
 
-    try {
-        if (!d->mslGen)
-            d->mslGen = new spirv_cross::CompilerMSL(reinterpret_cast<const uint32_t *>(d->ir.constData()), d->ir.size() / 4);
+    d->createCompiler(SPVC_BACKEND_MSL);
+    if (!d->mslGen)
+        return QByteArray();
 
-        spirv_cross::CompilerMSL::Options options;
-        options.msl_version = spirv_cross::CompilerMSL::Options::make_msl_version(version / 10, version % 10);
-        // leave platform set to macOS, it won't matter in practice (hopefully)
-        d->mslGen->set_msl_options(options);
+    spvc_compiler_options options = nullptr;
+    if (spvc_compiler_create_compiler_options(d->mslGen, &options) != SPVC_SUCCESS)
+        return QByteArray();
+    spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_VERSION,
+                                   SPVC_MAKE_MSL_VERSION(version / 10, version % 10, 0));
+    // leave platform set to macOS, it won't matter in practice (hopefully)
+    spvc_compiler_install_compiler_options(d->mslGen, options);
 
-        const std::string msl = d->mslGen->compile();
-
-        if (nativeBindings) {
-            spirv_cross::ShaderResources resources = d->mslGen->get_shader_resources();
-            for (const spirv_cross::Resource &r : resources.uniform_buffers) {
-                uint32_t binding = d->mslGen->get_decoration(r.id, spv::DecorationBinding);
-                uint32_t nativeBinding = d->mslGen->get_automatic_msl_resource_binding(r.id);
-                nativeBindings->insert(int(binding), { int(nativeBinding), 0 });
-            }
-            for (const spirv_cross::Resource &r : resources.storage_buffers) {
-                uint32_t binding = d->mslGen->get_decoration(r.id, spv::DecorationBinding);
-                uint32_t nativeBinding = d->mslGen->get_automatic_msl_resource_binding(r.id);
-                nativeBindings->insert(int(binding), { int(nativeBinding), 0 });
-            }
-            for (const spirv_cross::Resource &r : resources.sampled_images) {
-                uint32_t binding = d->mslGen->get_decoration(r.id, spv::DecorationBinding);
-                uint32_t nativeTextureBinding = d->mslGen->get_automatic_msl_resource_binding(r.id);
-                uint32_t nativeSamplerBinding = d->mslGen->get_automatic_msl_resource_binding_secondary(r.id);
-                nativeBindings->insert(int(binding), { int(nativeTextureBinding), int(nativeSamplerBinding) });
-            }
-            for (const spirv_cross::Resource &r : resources.storage_images) {
-                uint32_t binding = d->mslGen->get_decoration(r.id, spv::DecorationBinding);
-                uint32_t nativeBinding = d->mslGen->get_automatic_msl_resource_binding(r.id);
-                nativeBindings->insert(int(binding), { int(nativeBinding), 0 });
-            }
-        }
-
-        return QByteArray::fromStdString(msl);
-    } catch (const std::runtime_error &e) {
-        d->spirvCrossErrorMsg = QString::fromUtf8(e.what());
+    const char *result = nullptr;
+    if (spvc_compiler_compile(d->mslGen, &result) != SPVC_SUCCESS) {
+        d->spirvCrossErrorMsg = QString::fromUtf8(spvc_context_get_last_error_string(d->ctx));
         return QByteArray();
     }
+
+    if (nativeBindings) {
+        spvc_resources resources;
+        if (spvc_compiler_create_shader_resources(d->mslGen, &resources) == SPVC_SUCCESS) {
+            const spvc_reflected_resource *resourceList = nullptr;
+            size_t resourceListCount = 0;
+            if (spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_UNIFORM_BUFFER,
+                                                          &resourceList, &resourceListCount) == SPVC_SUCCESS)
+            {
+                for (size_t i = 0; i < resourceListCount; ++i) {
+                    unsigned binding = spvc_compiler_get_decoration(d->mslGen, resourceList[i].id, SpvDecorationBinding);
+                    unsigned nativeBinding = spvc_compiler_msl_get_automatic_resource_binding(d->mslGen, resourceList[i].id);
+                    nativeBindings->insert(int(binding), { int(nativeBinding), 0 });
+                }
+            }
+            if (spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_STORAGE_BUFFER,
+                                                          &resourceList, &resourceListCount) == SPVC_SUCCESS)
+            {
+                for (size_t i = 0; i < resourceListCount; ++i) {
+                    unsigned binding = spvc_compiler_get_decoration(d->mslGen, resourceList[i].id, SpvDecorationBinding);
+                    unsigned nativeBinding = spvc_compiler_msl_get_automatic_resource_binding(d->mslGen, resourceList[i].id);
+                    nativeBindings->insert(int(binding), { int(nativeBinding), 0 });
+                }
+            }
+            if (spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_SAMPLED_IMAGE,
+                                                          &resourceList, &resourceListCount) == SPVC_SUCCESS)
+            {
+                for (size_t i = 0; i < resourceListCount; ++i) {
+                    unsigned binding = spvc_compiler_get_decoration(d->mslGen, resourceList[i].id, SpvDecorationBinding);
+                    unsigned nativeTextureBinding = spvc_compiler_msl_get_automatic_resource_binding(d->mslGen, resourceList[i].id);
+                    unsigned nativeSamplerBinding = spvc_compiler_msl_get_automatic_resource_binding_secondary(d->mslGen, resourceList[i].id);
+                    nativeBindings->insert(int(binding), { int(nativeTextureBinding), int(nativeSamplerBinding) });
+                }
+            }
+            if (spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_STORAGE_IMAGE,
+                                                          &resourceList, &resourceListCount) == SPVC_SUCCESS)
+            {
+                for (size_t i = 0; i < resourceListCount; ++i) {
+                    unsigned binding = spvc_compiler_get_decoration(d->mslGen, resourceList[i].id, SpvDecorationBinding);
+                    unsigned nativeBinding = spvc_compiler_msl_get_automatic_resource_binding(d->mslGen, resourceList[i].id);
+                    nativeBindings->insert(int(binding), { int(nativeBinding), 0 });
+                }
+            }
+        }
+    }
+
+    return QByteArray(result);
 }
 
 QString QSpirvShader::translationErrorMessage() const

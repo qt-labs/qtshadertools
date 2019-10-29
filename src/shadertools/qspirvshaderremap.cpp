@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2017 The Qt Company Ltd.
+** Copyright (C) 2019 The Qt Company Ltd.
 ** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Shader Tools module
@@ -34,67 +34,47 @@
 **
 ****************************************************************************/
 
-#ifndef QSPIRVSHADER_P_H
-#define QSPIRVSHADER_P_H
+#include "qspirvshaderremap_p.h"
 
-//
-//  W A R N I N G
-//  -------------
-//
-// This file is not part of the Qt API.  It exists for the convenience
-// of a number of Qt sources files.  This header file may change from
-// version to version without notice, or even be removed.
-//
-// We mean it.
-//
-
-#include <QtShaderTools/private/qtshadertoolsglobal_p.h>
-#include <QtGui/private/qshader_p.h>
+#include <SPIRV/SPVRemapper.h>
 
 QT_BEGIN_NAMESPACE
 
-class QIODevice;
-struct QSpirvShaderPrivate;
-
-class Q_SHADERTOOLS_PRIVATE_EXPORT QSpirvShader
+void QSpirvShaderRemapper::remapErrorHandler(const std::string &s)
 {
-public:
-    enum GlslFlag {
-        GlslEs = 0x01,
-        FixClipSpace = 0x02,
-        FragDefaultMediump = 0x04
-    };
-    Q_DECLARE_FLAGS(GlslFlags, GlslFlag)
+    if (!remapErrorMsg.isEmpty())
+        remapErrorMsg.append(QLatin1Char('\n'));
+    remapErrorMsg.append(QString::fromStdString(s));
+}
 
-    enum RemapFlag {
-        StripOnly = 0x01
-    };
-    Q_DECLARE_FLAGS(RemapFlags, RemapFlag)
+void QSpirvShaderRemapper::remapLogHandler(const std::string &)
+{
+}
 
-    QSpirvShader();
-    ~QSpirvShader();
+QByteArray QSpirvShaderRemapper::remap(const QByteArray &ir, QSpirvShader::RemapFlags flags)
+{
+    if (ir.isEmpty())
+        return QByteArray();
 
-    void setFileName(const QString &fileName);
-    void setDevice(QIODevice *device);
-    void setSpirvBinary(const QByteArray &spirv);
+    remapErrorMsg.clear();
 
-    QShaderDescription shaderDescription() const;
+    spv::spirvbin_t b;
+    b.registerErrorHandler(std::bind(&QSpirvShaderRemapper::remapErrorHandler, this, std::placeholders::_1));
+    b.registerLogHandler(std::bind(&QSpirvShaderRemapper::remapLogHandler, this, std::placeholders::_1));
 
-    QByteArray remappedSpirvBinary(RemapFlags flags = RemapFlags(), QString *errorMessage = nullptr) const;
+    const uint32_t opts = flags.testFlag(QSpirvShader::StripOnly) ? spv::spirvbin_t::STRIP
+                                                                  : spv::spirvbin_t::DO_EVERYTHING;
 
-    QByteArray translateToGLSL(int version = 120, GlslFlags flags = GlslFlags()) const;
-    QByteArray translateToHLSL(int version = 50) const;
-    QByteArray translateToMSL(int version = 12, QShader::NativeResourceBindingMap *nativeBindings = nullptr) const;
-    QString translationErrorMessage() const;
+    std::vector<uint32_t> v;
+    v.resize(ir.size() / 4);
+    memcpy(v.data(), ir.constData(), v.size() * 4);
 
-private:
-    Q_DISABLE_COPY(QSpirvShader)
-    QSpirvShaderPrivate *d = nullptr;
-};
+    b.remap(v, opts);
 
-Q_DECLARE_OPERATORS_FOR_FLAGS(QSpirvShader::GlslFlags)
-Q_DECLARE_OPERATORS_FOR_FLAGS(QSpirvShader::RemapFlags)
+    if (!remapErrorMsg.isEmpty())
+        return QByteArray();
+
+    return QByteArray(reinterpret_cast<const char *>(v.data()), int(v.size()) * 4);
+}
 
 QT_END_NAMESPACE
-
-#endif
