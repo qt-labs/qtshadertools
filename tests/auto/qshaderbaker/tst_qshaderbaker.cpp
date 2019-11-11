@@ -54,6 +54,9 @@ private slots:
     void translateError();
     void genVariants();
     void defines();
+    void reflectArrayOfStructInBlock();
+    void reflectCombinedImageSampler();
+    void mslNativeBindingMap();
 };
 
 void tst_QShaderBaker::initTestCase()
@@ -423,6 +426,252 @@ void tst_QShaderBaker::defines()
         }
     }
     QVERIFY(opacity_ok);
+}
+
+void tst_QShaderBaker::reflectArrayOfStructInBlock()
+{
+    QShaderBaker baker;
+    baker.setSourceFileName(QLatin1String(":/data/array_of_struct_in_ubuf.frag"));
+    baker.setGeneratedShaderVariants({ QShader::StandardShader });
+    QVector<QShaderBaker::GeneratedShader> targets;
+    targets.append({ QShader::SpirvShader, QShaderVersion(100) });
+    targets.append({ QShader::GlslShader, QShaderVersion(100, QShaderVersion::GlslEs) });
+    targets.append({ QShader::GlslShader, QShaderVersion(120) });
+    targets.append({ QShader::GlslShader, QShaderVersion(150) });
+    targets.append({ QShader::HlslShader, QShaderVersion(50) });
+    targets.append({ QShader::MslShader, QShaderVersion(12) });
+    baker.setGeneratedShaders(targets);
+    QShader s = baker.bake();
+    QVERIFY(s.isValid());
+    QVERIFY(baker.errorMessage().isEmpty());
+
+    QShaderDescription desc = s.description();
+
+    QCOMPARE(desc.inputVariables().count(), 3);
+    QCOMPARE(desc.outputVariables().count(), 1);
+    QCOMPARE(desc.uniformBlocks().count(), 1);
+
+    const QVector<QShaderDescription::InOutVariable> inputs = desc.inputVariables();
+    for (const auto &var : inputs) {
+        switch (var.location) {
+        case 0:
+            QCOMPARE(var.name, QLatin1String("vECVertNormal"));
+            QCOMPARE(var.type, QShaderDescription::Vec3);
+            break;
+        case 1:
+            QCOMPARE(var.name, QLatin1String("vECVertPos"));
+            QCOMPARE(var.type, QShaderDescription::Vec3);
+            break;
+        case 2:
+            QCOMPARE(var.name, QLatin1String("vDiffuseAdjust"));
+            QCOMPARE(var.type, QShaderDescription::Vec3);
+            break;
+        default:
+            QFAIL("Unexpected input variable");
+            return;
+        }
+    }
+
+    const QVector<QShaderDescription::InOutVariable> outputs = desc.outputVariables();
+    QCOMPARE(outputs.first().location, 0);
+    QCOMPARE(outputs.first().name, QLatin1String("fragColor"));
+    QCOMPARE(outputs.first().type, QShaderDescription::Vec4);
+
+    const QVector<QShaderDescription::UniformBlock> ublocks = desc.uniformBlocks();
+    const QShaderDescription::UniformBlock ub = ublocks.first();
+    QCOMPARE(ub.binding, 1);
+    QCOMPARE(ub.blockName, QLatin1String("buf"));
+    QCOMPARE(ub.structName, QLatin1String("ubuf"));
+    QCOMPARE(ub.size, 768);
+    QCOMPARE(ub.members.count(), 7);
+
+    for (const QShaderDescription::BlockVariable &var : ub.members) {
+        if (var.name == QLatin1String("ECCameraPosition")) {
+            QCOMPARE(var.offset, 0);
+            QCOMPARE(var.size, 12);
+            QCOMPARE(var.type, QShaderDescription::Vec3);
+        } else if (var.name == QLatin1String("ka")) {
+            QCOMPARE(var.offset, 16);
+            QCOMPARE(var.size, 12);
+            QCOMPARE(var.type, QShaderDescription::Vec3);
+        } else if (var.name == QLatin1String("kd")) {
+            QCOMPARE(var.offset, 32);
+            QCOMPARE(var.size, 12);
+            QCOMPARE(var.type, QShaderDescription::Vec3);
+        } else if (var.name == QLatin1String("ks")) {
+            QCOMPARE(var.offset, 48);
+            QCOMPARE(var.size, 12);
+            QCOMPARE(var.type, QShaderDescription::Vec3);
+        } else if (var.name == QLatin1String("numLights")) {
+            QCOMPARE(var.offset, 704);
+            QCOMPARE(var.size, 4);
+            QCOMPARE(var.type, QShaderDescription::Int);
+        } else if (var.name == QLatin1String("mm")) {
+            QCOMPARE(var.offset, 720);
+            QCOMPARE(var.size, 48);
+            QCOMPARE(var.type, QShaderDescription::Mat3);
+            QCOMPARE(var.matrixStride, 16);
+            QCOMPARE(var.matrixIsRowMajor, true);
+        } else if (var.name == QLatin1String("lights")) {
+            QCOMPARE(var.offset, 64);
+            QCOMPARE(var.size, 640);
+            QCOMPARE(var.type, QShaderDescription::Struct);
+            QCOMPARE(var.arrayDims, QVector<int>() << 10);
+            QCOMPARE(var.structMembers.count(), 7);
+            for (const QShaderDescription::BlockVariable &structVar : var.structMembers) {
+                if (structVar.name == QLatin1String("ECLightPosition")) {
+                    QCOMPARE(structVar.offset, 0);
+                    QCOMPARE(structVar.size, 12);
+                    QCOMPARE(structVar.type, QShaderDescription::Vec3);
+                } else if (structVar.name == QLatin1String("attenuation")) {
+                    QCOMPARE(structVar.offset, 16);
+                    QCOMPARE(structVar.size, 12);
+                    QCOMPARE(structVar.type, QShaderDescription::Vec3);
+                } else if (structVar.name == QLatin1String("color")) {
+                    QCOMPARE(structVar.offset, 32);
+                    QCOMPARE(structVar.size, 12);
+                    QCOMPARE(structVar.type, QShaderDescription::Vec3);
+                } else if (structVar.name == QLatin1String("intensity")) {
+                    QCOMPARE(structVar.offset, 44);
+                    QCOMPARE(structVar.size, 4);
+                    QCOMPARE(structVar.type, QShaderDescription::Float);
+                } else if (structVar.name == QLatin1String("specularExp")) {
+                    QCOMPARE(structVar.offset, 48);
+                    QCOMPARE(structVar.size, 4);
+                    QCOMPARE(structVar.type, QShaderDescription::Float);
+                } else if (structVar.name == QLatin1String("__dummy0")) {
+                    QCOMPARE(structVar.offset, 52);
+                    QCOMPARE(structVar.size, 4);
+                    QCOMPARE(structVar.type, QShaderDescription::Float);
+                } else if (structVar.name == QLatin1String("__dummy1")) {
+                    QCOMPARE(structVar.offset, 56);
+                    QCOMPARE(structVar.size, 4);
+                    QCOMPARE(structVar.type, QShaderDescription::Float);
+                } else {
+                    QFAIL("Unexpected member in 'lights' struct in uniform block");
+                }
+            }
+        } else {
+            QFAIL("Unexpected uniform block member");
+        }
+    }
+}
+
+void tst_QShaderBaker::reflectCombinedImageSampler()
+{
+    QShaderBaker baker;
+    baker.setSourceFileName(QLatin1String(":/data/sgtexture.frag"));
+    baker.setGeneratedShaderVariants({ QShader::StandardShader });
+    QVector<QShaderBaker::GeneratedShader> targets;
+    targets.append({ QShader::SpirvShader, QShaderVersion(100) });
+    targets.append({ QShader::GlslShader, QShaderVersion(100, QShaderVersion::GlslEs) });
+    targets.append({ QShader::GlslShader, QShaderVersion(120) });
+    targets.append({ QShader::GlslShader, QShaderVersion(150) });
+    targets.append({ QShader::HlslShader, QShaderVersion(50) });
+    targets.append({ QShader::MslShader, QShaderVersion(12) });
+    baker.setGeneratedShaders(targets);
+    QShader s = baker.bake();
+    QVERIFY(s.isValid());
+    QVERIFY(baker.errorMessage().isEmpty());
+
+    QShaderDescription desc = s.description();
+    QCOMPARE(desc.inputVariables().count(), 1);
+    QCOMPARE(desc.outputVariables().count(), 1);
+    QCOMPARE(desc.uniformBlocks().count(), 1);
+    QCOMPARE(desc.combinedImageSamplers().count(), 2);
+
+    auto inputVar = desc.inputVariables().first();
+    QCOMPARE(inputVar.location, 0);
+    QCOMPARE(inputVar.name, QLatin1String("qt_TexCoord"));
+    QCOMPARE(inputVar.type, QShaderDescription::Vec2);
+
+    auto outputVar = desc.outputVariables().first();
+    QCOMPARE(outputVar.location, 0);
+    QCOMPARE(outputVar.name, QLatin1String("fragColor"));
+    QCOMPARE(outputVar.type, QShaderDescription::Vec4);
+
+    auto block = desc.uniformBlocks().first();
+    QCOMPARE(block.binding, 0);
+    QCOMPARE(block.size, 68);
+    QCOMPARE(block.blockName, QLatin1String("buf"));
+    QCOMPARE(block.structName, QLatin1String("ubuf"));
+    QCOMPARE(block.members.count(), 2);
+    for (int i = 0; i < block.members.count(); ++i) {
+        const QShaderDescription::BlockVariable &blockVar(block.members[i]);
+        switch (i) {
+        case 0:
+            QCOMPARE(blockVar.name, QLatin1String("qt_Matrix"));
+            QCOMPARE(blockVar.offset, 0);
+            QCOMPARE(blockVar.size, 64);
+            QCOMPARE(blockVar.type, QShaderDescription::Mat4);
+            QCOMPARE(blockVar.matrixStride, 16);
+            QCOMPARE(blockVar.matrixIsRowMajor, false);
+            break;
+        case 1:
+            QCOMPARE(blockVar.name, QLatin1String("opacity"));
+            QCOMPARE(blockVar.offset, 64);
+            QCOMPARE(blockVar.size, 4);
+            QCOMPARE(blockVar.type, QShaderDescription::Float);
+            break;
+        default:
+            break;
+        }
+    }
+
+    for (const QShaderDescription::InOutVariable &imSampVar : desc.combinedImageSamplers()) {
+        switch (imSampVar.binding) {
+        case 1:
+            QCOMPARE(imSampVar.name, QLatin1String("qt_Texture"));
+            QCOMPARE(imSampVar.type, QShaderDescription::Sampler2D);
+            break;
+        case 2:
+            QCOMPARE(imSampVar.name, QLatin1String("t1"));
+            QCOMPARE(imSampVar.type, QShaderDescription::Sampler2D);
+            break;
+        default:
+            QFAIL("Unexpected combined image sampler");
+            return;
+        }
+    }
+}
+
+void tst_QShaderBaker::mslNativeBindingMap()
+{
+    QShaderBaker baker;
+    baker.setSourceFileName(QLatin1String(":/data/sgtexture.frag"));
+    baker.setGeneratedShaderVariants({ QShader::StandardShader });
+    QVector<QShaderBaker::GeneratedShader> targets;
+    targets.append({ QShader::SpirvShader, QShaderVersion(100) });
+    targets.append({ QShader::GlslShader, QShaderVersion(100, QShaderVersion::GlslEs) });
+    targets.append({ QShader::GlslShader, QShaderVersion(120) });
+    targets.append({ QShader::GlslShader, QShaderVersion(150) });
+    targets.append({ QShader::HlslShader, QShaderVersion(50) });
+    targets.append({ QShader::MslShader, QShaderVersion(12) });
+    baker.setGeneratedShaders(targets);
+    QShader s = baker.bake();
+    QVERIFY(s.isValid());
+    QVERIFY(baker.errorMessage().isEmpty());
+
+    const QShaderKey mslShaderKey(QShader::MslShader, QShaderVersion(12));
+    QVERIFY(s.nativeResourceBindingMap(mslShaderKey));
+
+    const QShader::NativeResourceBindingMap *nativeBindingMap = s.nativeResourceBindingMap(mslShaderKey);
+    QCOMPARE(nativeBindingMap->count(), 3);
+    QVERIFY(nativeBindingMap->contains(0)); // uniform block
+    QVERIFY(nativeBindingMap->contains(1)); // combined image sampler, maps to a texture and sampler in MSL
+    QVERIFY(nativeBindingMap->contains(2)); // same
+
+    // MSL has per-resource namespaces
+    QPair<int, int> nativeBindingPair = nativeBindingMap->value(0);
+    QCOMPARE(nativeBindingPair.first, 0); // uniform buffer
+
+    nativeBindingPair = nativeBindingMap->value(1);
+    QCOMPARE(nativeBindingPair.first, 0); // texture
+    QCOMPARE(nativeBindingPair.second, 0); // sampler
+
+    nativeBindingPair = nativeBindingMap->value(2);
+    QCOMPARE(nativeBindingPair.first, 1); // texture
+    QCOMPARE(nativeBindingPair.second, 1); // sampler
 }
 
 #include <tst_qshaderbaker.moc>
