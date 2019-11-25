@@ -296,8 +296,11 @@ int main(int argc, char **argv)
     QCoreApplication app(argc, argv);
 
     QCommandLineParser cmdLineParser;
-    cmdLineParser.setApplicationDescription(QObject::tr("Qt Shader Baker"));
+    const QString appDesc = QString::asprintf("Qt Shader Baker (using QShader from Qt %s)", qVersion());
+    cmdLineParser.setApplicationDescription(appDesc);
+    app.setApplicationVersion(QLatin1String(QT_VERSION_STR));
     cmdLineParser.addHelpOption();
+    cmdLineParser.addVersionOption();
     cmdLineParser.addPositionalArgument(QLatin1String("file"), QObject::tr("Vulkan GLSL source file to compile"), QObject::tr("file"));
     QCommandLineOption batchableOption({ "b", "batchable" }, QObject::tr("Also generates rewritten vertex shader for Qt Quick scene graph batching."));
     cmdLineParser.addOption(batchableOption);
