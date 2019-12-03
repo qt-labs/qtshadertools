@@ -348,7 +348,7 @@ QShader QShaderBaker::bake()
     }
 
     d->compiler.setSourceString(d->source, d->stage, d->sourceFileName);
-    d->compiler.setFlags(0);
+    d->compiler.setFlags({});
     d->compiler.setPreamble(d->preamble);
     QByteArray spirv = d->compiler.compileToSpirv();
     if (spirv.isEmpty()) {
@@ -402,7 +402,7 @@ QShader QShaderBaker::bake()
                 break;
             case QShader::GlslShader:
             {
-                QSpirvShader::GlslFlags flags = 0;
+                QSpirvShader::GlslFlags flags;
                 if (req.second.flags().testFlag(QShaderVersion::GlslEs))
                     flags |= QSpirvShader::GlslEs;
                 shader.setShader(currentSpirvShader->translateToGLSL(req.second.version(), flags));

@@ -260,7 +260,7 @@ QShaderDescription::InOutVariable QSpirvShaderPrivate::inOutVar(const spvc_refle
         // DecorationNonReadable/Writable in a way that it returns the real
         // values (f.ex. has_decoration() on r.id or so is not functional). So
         // ignore these for now and pretend the image is read/write.
-        v.imageFlags = 0;
+        v.imageFlags = {};
     }
 
     return v;

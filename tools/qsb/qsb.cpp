@@ -228,7 +228,7 @@ static void extract(const QShader &bs, const QString &what, bool batchable, cons
         else
             return;
 
-        QShaderVersion::Flags flags = 0;
+        QShaderVersion::Flags flags;
         QString version = typeAndVersion[1];
         if (version.endsWith(QLatin1String(" es"))) {
             version = version.left(version.count() - 3);
@@ -389,7 +389,7 @@ int main(int argc, char **argv)
         if (cmdLineParser.isSet(glslOption)) {
             const QStringList versions = cmdLineParser.value(glslOption).trimmed().split(',');
             for (QString version : versions) {
-                QShaderVersion::Flags flags = 0;
+                QShaderVersion::Flags flags;
                 if (version.endsWith(QLatin1String(" es"))) {
                     version = version.left(version.count() - 3);
                     flags |= QShaderVersion::GlslEs;

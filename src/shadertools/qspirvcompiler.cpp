@@ -161,7 +161,7 @@ struct QSpirvCompilerPrivate
     QByteArray source;
     QByteArray batchableSource;
     EShLanguage stage = EShLangVertex;
-    QSpirvCompiler::Flags flags = 0;
+    QSpirvCompiler::Flags flags;
     QByteArray preamble;
     int batchAttrLoc = 7;
     QByteArray spirv;
