@@ -361,7 +361,37 @@ void QSpirvShaderPrivate::processResources()
             spvc_type t = spvc_compiler_get_type_handle(glslGen, r.base_type_id);
             QShaderDescription::UniformBlock block;
             block.blockName = QString::fromUtf8(r.name);
+
+            // the simple case:
+            //     layout(...) uniform blk { T v; } inst;
+            // gives us blockName "blk" and structName "inst" because
+            // in GLSL without uniform blocks this ends up being
+            //     struct blk { T v; }; uniform blk inst;
+            // or, where real UBs are used, for instance Metal:
+            //   struct blk { T v; }; constant blk& inst [[buffer(N)]]
             block.structName = QString::fromUtf8(spvc_compiler_get_name(glslGen, r.id));
+
+            // the annoying case:
+            //     layout(...) uniform blk { T v; };
+            // here structName is empty and the generated code (when no uniform
+            // blocks) uses _ID as a fallback name:
+            //     struct blk { T v; }; uniform blk _ID;
+            // or, with real uniform buffers, f.ex. Metal:
+            //     struct blk { T v; }; constant blk& _ID [[buffer(N)]]
+            // Let's make sure the fallback name is filled in correctly.
+            if (block.structName.isEmpty()) {
+                // The catch (matters only when uniform blocks are not used in
+                // the output) is that ID is per-shader and so may differ
+                // between shaders, meaning that having the same uniform block
+                // in a vertex and fragment shader will lead to each stage
+                // having its own set of uniforms corresponding to the ub
+                // members (ofc, inactive uniforms may get optimized out by the
+                // compiler, so the duplication then is only there for members
+                // used in both stages). Not much we can do about that here,
+                // though. The GL backend of QRhi can deal with this.
+                block.structName = QLatin1String("_") + QString::number(r.id);
+            }
+
             size_t size = 0;
             spvc_compiler_get_declared_struct_size(glslGen, t, &size);
             block.size = int(size);
@@ -369,12 +399,14 @@ void QSpirvShaderPrivate::processResources()
                 block.binding = int(spvc_compiler_get_decoration(glslGen, r.id, SpvDecorationBinding));
             if (spvc_compiler_has_decoration(glslGen, r.id, SpvDecorationDescriptorSet))
                 block.descriptorSet = int(spvc_compiler_get_decoration(glslGen, r.id, SpvDecorationDescriptorSet));
+
             unsigned count = spvc_type_get_num_member_types(t);
             for (unsigned idx = 0; idx < count; ++idx) {
                 const QShaderDescription::BlockVariable v = blockVar(r.base_type_id, idx);
                 if (v.type != QShaderDescription::Unknown)
                     block.members.append(v);
             }
+
             dd->uniformBlocks.append(block);
         }
     }
