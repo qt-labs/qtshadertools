@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2018 The Qt Company Ltd.
+** Copyright (C) 2019 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the Qt Shader Tools module
@@ -49,8 +49,9 @@ consumes QRhiShader instances directly.
 The two main components are:
 
 \list
-\li QShaderBaker and the \c qsb command-line tool, and
-\li QRhiShader (part of the Qt Rhi module)
+\li QShaderBaker,
+\li the \c qsb command-line tool, and
+\li QShader (part of the QtGui module)
 \endlist
 
 \section1 Table of Contents

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2018 The Qt Company Ltd.
+** Copyright (C) 2019 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the Qt Shader Tools module
@@ -30,7 +30,7 @@
 \title Copyright Notices
 \section1 Third-party Licenses
 
-The following table lists parts (modules) of Qt Rendering Hardware Interface that
+The following table lists parts (modules) of Qt Shader Tools that
 incorporate code licensed under third-party open-source licenses:
 
 \annotatedlist attributions-qtshadertools
