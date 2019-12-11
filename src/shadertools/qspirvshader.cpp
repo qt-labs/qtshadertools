@@ -619,13 +619,20 @@ QByteArray QSpirvShader::translateToMSL(int version, QShader::NativeResourceBind
         if (spvc_compiler_create_shader_resources(d->mslGen, &resources) == SPVC_SUCCESS) {
             const spvc_reflected_resource *resourceList = nullptr;
             size_t resourceListCount = 0;
+            // A nativeBinding of -1 means unused. This also fits
+            // *_get_automatic_resource_binding() which returns uint32_t(-1)
+            // when there is no binding, which can happen when the uniform
+            // block, sampler, etc. is not actively used in the shader. The map
+            // must always be complete, including a (binding -> -1) mapping for
+            // inactive resources as well. The second value of the pair is only
+            // relevant for combined image samplers, and is -1 otherwise.
             if (spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_UNIFORM_BUFFER,
                                                           &resourceList, &resourceListCount) == SPVC_SUCCESS)
             {
                 for (size_t i = 0; i < resourceListCount; ++i) {
                     unsigned binding = spvc_compiler_get_decoration(d->mslGen, resourceList[i].id, SpvDecorationBinding);
                     unsigned nativeBinding = spvc_compiler_msl_get_automatic_resource_binding(d->mslGen, resourceList[i].id);
-                    nativeBindings->insert(int(binding), { int(nativeBinding), 0 });
+                    nativeBindings->insert(int(binding), { int(nativeBinding), -1 });
                 }
             }
             if (spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_STORAGE_BUFFER,
@@ -634,7 +641,7 @@ QByteArray QSpirvShader::translateToMSL(int version, QShader::NativeResourceBind
                 for (size_t i = 0; i < resourceListCount; ++i) {
                     unsigned binding = spvc_compiler_get_decoration(d->mslGen, resourceList[i].id, SpvDecorationBinding);
                     unsigned nativeBinding = spvc_compiler_msl_get_automatic_resource_binding(d->mslGen, resourceList[i].id);
-                    nativeBindings->insert(int(binding), { int(nativeBinding), 0 });
+                    nativeBindings->insert(int(binding), { int(nativeBinding), -1 });
                 }
             }
             if (spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_SAMPLED_IMAGE,
@@ -653,7 +660,7 @@ QByteArray QSpirvShader::translateToMSL(int version, QShader::NativeResourceBind
                 for (size_t i = 0; i < resourceListCount; ++i) {
                     unsigned binding = spvc_compiler_get_decoration(d->mslGen, resourceList[i].id, SpvDecorationBinding);
                     unsigned nativeBinding = spvc_compiler_msl_get_automatic_resource_binding(d->mslGen, resourceList[i].id);
-                    nativeBindings->insert(int(binding), { int(nativeBinding), 0 });
+                    nativeBindings->insert(int(binding), { int(nativeBinding), -1 });
                 }
             }
         }
