@@ -546,6 +546,10 @@ QByteArray QSpirvShader::translateToGLSL(int version, GlslFlags flags) const
     // behavior regardless of the GLSL version.
     spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_GLSL_EMIT_UNIFORM_BUFFER_AS_PLAIN_UNIFORMS,
                                    true);
+    // Do not emit binding qualifiers for samplers (and for uniform blocks, but
+    // those we just disabled above).
+    spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_GLSL_ENABLE_420PACK_EXTENSION,
+                                   false);
     spvc_compiler_install_compiler_options(d->glslGen, options);
 
     const char *result = nullptr;
@@ -554,19 +558,10 @@ QByteArray QSpirvShader::translateToGLSL(int version, GlslFlags flags) const
         return QByteArray();
     }
 
-    QByteArray src(result);
-
-    // Fix it up by adding #extension GL_ARB_separate_shader_objects : require
-    // as well in order to make Mesa and perhaps others happy.
-    const QByteArray searchStr = QByteArrayLiteral("#extension GL_ARB_shading_language_420pack : require\n#endif\n");
-    int pos = src.indexOf(searchStr);
-    if (pos >= 0) {
-        src.insert(pos + searchStr.count(), QByteArrayLiteral("#ifdef GL_ARB_separate_shader_objects\n"
-                                                              "#extension GL_ARB_separate_shader_objects : require\n"
-                                                              "#endif\n"));
-    }
-
-    return src;
+    // We used to fix up the result to complement GL_ARB_shading_language_420pack
+    // with GL_ARB_separate_shader_objects to make Mesa happy, but the 420pack
+    // is never relied on now so no need to do anything here.
+    return result;
 }
 
 QByteArray QSpirvShader::translateToHLSL(int version) const
