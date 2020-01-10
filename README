@@ -1,0 +1,4 @@
+This repo should be considered inactive. For Qt 6 (so in combination
+with the dev branch of qtbase, qtdeclarative, etc.) it is superseded
+by qt/qtshadertools. This qt-labs version is kept around for the time
+being for use with (and only with) Qt 5.14 and 5.15.
